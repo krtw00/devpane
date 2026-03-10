@@ -27,7 +27,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS task_logs (
     id        TEXT PRIMARY KEY,
-    task_id   TEXT NOT NULL REFERENCES tasks(id),
+    task_id   TEXT NOT NULL,
     agent     TEXT NOT NULL,
     message   TEXT NOT NULL,
     timestamp TEXT NOT NULL

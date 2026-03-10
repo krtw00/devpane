@@ -1,12 +1,38 @@
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
+import { spawn } from "node:child_process"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getRecentDone, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
 
-const execFileAsync = promisify(execFile)
+function spawnClaude(args: string[], cwd: string, stdin: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env }
+    delete env.CLAUDECODE
+
+    const proc = spawn("claude", args, { cwd, timeout: timeoutMs, env })
+
+    let stdout = ""
+    let stderr = ""
+    proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
+    proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        const detail = stderr || stdout
+        reject(new Error(`claude exited ${code}: ${detail.slice(0, 1000)}`))
+      } else {
+        resolve(stdout)
+      }
+    })
+    proc.on("error", reject)
+
+    if (stdin) {
+      proc.stdin.write(stdin)
+    }
+    proc.stdin.end()
+  })
+}
 
 type PmContext = {
   claudeMd: string
@@ -97,20 +123,17 @@ export async function runPm(): Promise<PmOutput> {
   }
 
   const prompt = buildPmPrompt(context)
-  const env = { ...process.env }
-  delete env.CLAUDECODE
 
   console.log("[pm] generating tasks...")
 
-  const { stdout } = await execFileAsync("claude", [
-    "-p", prompt,
-    "--allowedTools", "Read,Glob,Grep",
-    "--output-format", "json",
-  ], {
-    cwd: config.PROJECT_ROOT,
-    timeout: config.PM_TIMEOUT_MS,
-    env,
-  })
+  // Pass prompt directly as argument — execFile/spawn don't have shell
+  // argument length limits (Linux ARG_MAX is ~2MB, our prompt is <10KB)
+  const stdout = await spawnClaude(
+    ["-p", prompt, "--allowedTools", "Read,Glob,Grep", "--output-format", "json"],
+    config.PROJECT_ROOT,
+    "",
+    config.PM_TIMEOUT_MS,
+  )
 
   const output = parsePmOutput(stdout)
   console.log(`[pm] generated ${output.tasks.length} tasks: ${output.reasoning}`)

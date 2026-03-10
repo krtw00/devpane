@@ -466,6 +466,40 @@ devpane/
 | Worker hang（無限ループ） | リソース占有 | spawnのtimeout設定 |
 | 自己開発で壊れる | daemon自体が動かなくなる | worktree隔離で本体を直接変更しない、マージは人間承認（初期） |
 
+## 将来構想: VPS常駐 + ブラウザアクセス
+
+Phase 1（ローカル自律ループ）が安定したら、**VPS上で24/7稼働しブラウザから覗く**構成に移行する。
+
+### なぜVPSか
+- ローカルマシンを閉じても開発が止まらない
+- 外出先からスマホで進捗を確認できる
+- OpenClawと同じ「放置して勝手に開発」の完成形
+
+### 構成イメージ
+
+```
+apps-vps (133.18.124.16, 4コア/4GB)
+├── devpane daemon (port 3001)   ← 自律ループ常駐
+├── devpane web (port 3000)      ← "オフィスの窓" UI
+├── claude CLI (Max plan認証)    ← daemon経由で実行
+└── Caddy / nginx                ← HTTPS + 認証プロキシ
+```
+
+### 移行に必要なこと
+- **VPSにClaude Code CLIをインストール + `claude login`**
+- **認証**: Basic認証 or Tailscale経由のアクセス制限（公開しない）
+- **Web UI (Phase 2)**: タスク一覧、ログ閲覧、チャット介入のリアルタイム表示
+- **通知**: Slack/Discordで異常時だけ通知（正常系は黙って回る）
+- **デプロイ**: docker compose or systemd で daemon + web を管理
+- **ストレージ**: SQLite（devpane.db）のバックアップ戦略
+- **GitHub連携**: VPSからgit push、PR作成まで自動化
+
+### ロードマップ
+1. **Phase 1**: ローカルで自律ループが安定稼働（← 今ここ）
+2. **Phase 2**: Web UI（Vue 3）で「オフィスの窓」を実装
+3. **Phase 3**: VPSデプロイ、HTTPS + 認証、通知連携
+4. **Phase 4**: Worker並列化、GitHub Issues同期、チャット介入
+
 ## 未決事項
 
 - `claude -p -w` のworktree挙動検証（使えればworktree.ts自前実装を省略可能）
