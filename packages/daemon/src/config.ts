@@ -1,0 +1,17 @@
+import type { Config } from "@devpane/shared"
+
+function env(key: string, fallback: string): string {
+  return process.env[key] ?? fallback
+}
+
+export const config: Config = {
+  PROJECT_ROOT: env("PROJECT_ROOT", process.cwd()),
+  WORKER_TIMEOUT_MS: Number(env("WORKER_TIMEOUT_MS", "600000")),
+  PM_TIMEOUT_MS: Number(env("PM_TIMEOUT_MS", "120000")),
+  IDLE_INTERVAL_SEC: Number(env("IDLE_INTERVAL_SEC", "60")),
+  PM_RETRY_INTERVAL_SEC: Number(env("PM_RETRY_INTERVAL_SEC", "30")),
+  COOLDOWN_INTERVAL_SEC: Number(env("COOLDOWN_INTERVAL_SEC", "300")),
+  WORKER_CONCURRENCY: Number(env("WORKER_CONCURRENCY", "1")),
+  DB_PATH: env("DB_PATH", "./devpane.db"),
+  API_PORT: Number(env("API_PORT", "3001")),
+}

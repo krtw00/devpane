@@ -108,8 +108,7 @@ const { stdout } = await execFileAsync("claude", [
   "-p", buildPmPrompt(context),
   "--allowedTools", "Read,Glob,Grep",
   "--output-format", "json",
-  "--max-turns", String(config.PM_MAX_TURNS),
-], { cwd: projectRoot })
+], { cwd: projectRoot, timeout: config.PM_TIMEOUT_MS })
 
 const result = JSON.parse(stdout)
 ```
@@ -187,8 +186,8 @@ function runWorker(task: Task, worktreePath: string): Promise<WorkerResult> {
     const proc = spawn("claude", [
       "-p", task.description,
       "--allowedTools", "Read,Edit,Write,Bash,Glob,Grep",
+      "--permission-mode", "bypassPermissions",
       "--output-format", "json",
-      "--max-turns", String(config.WORKER_MAX_TURNS),
     ], {
       cwd: worktreePath,  // git worktreeで隔離
       timeout: config.WORKER_TIMEOUT_MS,
@@ -219,7 +218,8 @@ Workerの特徴：
 - `.worktrees/` ディレクトリは `.gitignore` に追加済み
 - Workerが生成したコードのマージはPM判断 or 人間承認を経由（Phase 1は人間承認）
 - ネットワークアクセスを伴うBashコマンドは許可（pnpm install等に必要）。ただし将来的にallow/denyリストで制御可能にする
-- `--max-turns` + spawnの `timeout` で暴走を二重に防止
+- `--permission-mode bypassPermissions` でworktree内の自律実行を許可
+- spawnの `timeout` で暴走を防止
 
 #### Task Queue（SQLite）
 
@@ -286,9 +286,8 @@ type Config = {
   PROJECT_ROOT: string          // default: process.cwd()
 
   // エージェント制限
-  WORKER_MAX_TURNS: number      // default: 30
   WORKER_TIMEOUT_MS: number     // default: 600000（10分）
-  PM_MAX_TURNS: number          // default: 5
+  PM_TIMEOUT_MS: number         // default: 120000（2分）
 
   // ループ制御
   IDLE_INTERVAL_SEC: number     // default: 60（キュー空時の待機秒数）
@@ -315,7 +314,7 @@ type Config = {
 | daemon | Hono + Node.js | 軽量、TypeScript native |
 | DB | better-sqlite3 | 同期API、daemon内完結、ファイル1つ |
 | タスクID | ULID | 時系列ソート可能、衝突なし |
-| worktree | git worktree | 標準gitコマンド、追加依存なし |
+| worktree | git worktree（自前管理） or `claude -p -w`（CLI組み込み） | 要検証: CLI組み込みが使えれば自前実装を省略可能 |
 | プロセス管理 | systemd user unit | ArchLinux標準、自動再起動 |
 
 ### 自律ループのフロー
@@ -461,14 +460,16 @@ devpane/
 
 | リスク | 影響 | 対策 |
 |--------|------|------|
-| PMのタスク生成が的外れ | 無駄なコード変更が増える | maxTurns/maxBudget制限、最初は保守的なsystemPromptで |
+| PMのタスク生成が的外れ | 無駄なコード変更が増える | timeout制限、最初は保守的なsystem-promptで |
 | Max planレート制限 | ループが頻繁に待機状態になる | ループ間隔の調整、レート制限到達時の指数バックオフ |
 | worktreeのコンフリクト | マージ失敗 | 小さなタスク粒度を維持、PM側で依存関係を考慮 |
-| Worker hang（無限ループ） | リソース占有 | maxTurns上限、タイムアウト設定 |
+| Worker hang（無限ループ） | リソース占有 | spawnのtimeout設定 |
 | 自己開発で壊れる | daemon自体が動かなくなる | worktree隔離で本体を直接変更しない、マージは人間承認（初期） |
 
 ## 未決事項
 
+- `claude -p -w` のworktree挙動検証（使えればworktree.ts自前実装を省略可能）
+- `claude -p --output-format json` の実際の出力JSON構造（parsePmOutputの実装に必要）
 - PMのsystem promptの具体的な内容（プロジェクト分析の深さ、タスク粒度の指針）
 - マージの自動化タイミング（Phase 1は人間承認？PMに任せる？）
 - Max planのティア選択（$100/月 vs $200/月、レート制限の差異）

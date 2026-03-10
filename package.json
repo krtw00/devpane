@@ -1,0 +1,16 @@
+{
+  "name": "devpane",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @devpane/daemon dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter @devpane/daemon start",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+  }
+}
