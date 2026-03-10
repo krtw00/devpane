@@ -13,7 +13,7 @@ AIチームのバーチャルオフィスをブラウザの窓から覗き、チ
 
 ### 前提条件・制約
 - Claude Code CLIがインストール済み（`claude` コマンドが使える）
-- ANTHROPIC_API_KEY が設定済み
+- `claude login` でMax plan認証済み（OAuth。API key従量課金ではなく定額サブスクで回す）
 - 対象リポジトリにCLAUDE.mdが存在する
 - ローカルマシン（iguchi個人環境）で動作
 
@@ -31,7 +31,8 @@ AIチームのバーチャルオフィスをブラウザの窓から覗き、チ
 ### 非機能要件
 - daemon起動後、人間の操作なしで回り続ける
 - Workerの並列数は設計上N本（初期実装は1）
-- API消費のコスト上限を設定可能
+- Max planの定額サブスクリプション内で運用（API従量課金なし）
+- レート制限に到達した場合は待機して自動再開
 
 ## 設計
 
@@ -90,36 +91,37 @@ while (alive) {
 
 **エラーハンドリング:**
 - Worker失敗（exit_code !== 0）→ タスクをfailedにしてPMに報告、次タスクへ進む
-- PM呼び出し失敗（SDK例外）→ `PM_RETRY_INTERVAL`（デフォルト30秒）後にリトライ、3回連続失敗で一時停止（`COOLDOWN_INTERVAL`: 5分）
-- SDK接続エラー（API不通等）→ 指数バックオフ（30s → 60s → 120s → 最大300s）
+- PM呼び出し失敗（CLIエラー）→ `PM_RETRY_INTERVAL`（デフォルト30秒）後にリトライ、3回連続失敗で一時停止（`COOLDOWN_INTERVAL`: 5分）
+- レート制限到達 → 指数バックオフ（60s → 120s → 300s → 最大600s）で待機後に自動再開
 - 致命的エラー（DB破損、worktree操作不能）→ ループ停止、エラーログ出力、通知（将来）
-- 1日のAPI累計コストが `DAILY_BUDGET_USD` を超過 → ループ一時停止、翌日リセット
 
 #### PM Agent
-Claude Agent SDKで実行。プロジェクトの状態を見てタスクを生成する。
+Claude Code CLI headlessモードで実行。プロジェクトの状態を見てタスクを生成する。
 
 ```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 
-for await (const msg of query({
-  prompt: "プロジェクトの現状を分析し、次に実装すべきタスクを決定せよ",
-  options: {
-    cwd: projectRoot,
-    allowedTools: ["Read", "Glob", "Grep"],  // 読み取り専用
-    systemPrompt: PM_SYSTEM_PROMPT,
-    outputFormat: { type: "json_schema", schema: taskListSchema },
-    maxTurns: 5,
-  }
-})) { ... }
+const execFileAsync = promisify(execFile)
+
+const { stdout } = await execFileAsync("claude", [
+  "-p", buildPmPrompt(context),
+  "--allowedTools", "Read,Glob,Grep",
+  "--output-format", "json",
+  "--max-turns", String(config.PM_MAX_TURNS),
+], { cwd: projectRoot })
+
+const result = JSON.parse(stdout)
 ```
 
 PMの特徴：
 - 読み取り専用ツールのみ許可（コードを変更しない）
-- structured outputでタスクリストを返す
+- `--output-format json` でJSON応答を取得、パースしてタスクリストを抽出
+- Max plan認証で定額内実行
 
 **PMへの入力コンテキスト構築:**
 
-PMの `prompt` は以下の情報を結合して構築する。
+PMの prompt は以下の情報を結合して構築する。
 
 ```typescript
 function buildPmPrompt(context: PmContext): string {
@@ -146,63 +148,78 @@ function buildPmPrompt(context: PmContext): string {
     "上記を踏まえ、次に実装すべきタスクを優先度順に生成せよ。",
     "既にpendingのタスクと重複しないこと。",
     "1タスク = 1 Workerが30ターン以内で完了できる粒度にすること。",
+    "",
+    "以下のJSON形式で回答せよ:",
+    '{"tasks": [{"title": "...", "description": "...", "priority": 1}], "reasoning": "..."}',
   ].join("\n")
 }
 ```
 
-PMのstructured output スキーマ:
+**PM出力のパース:**
+
+CLIの `--output-format json` はClaude Code自体のメタ情報を含むJSONを返す。
+最終的なテキスト応答からタスクリストJSONを抽出する。
+
 ```typescript
-const taskListSchema = {
-  type: "object",
-  properties: {
-    tasks: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          description: { type: "string" },
-          priority: { type: "number" },
-        },
-        required: ["title", "description", "priority"]
-      }
-    },
-    reasoning: { type: "string" }  // なぜこのタスクを選んだか
-  },
-  required: ["tasks", "reasoning"]
+type PmOutput = {
+  tasks: { title: string; description: string; priority: number }[]
+  reasoning: string
+}
+
+function parsePmOutput(cliOutput: string): PmOutput {
+  const json = JSON.parse(cliOutput)
+  // result フィールドからテキストを取得し、JSONブロックを抽出
+  const text = json.result
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error("PM output does not contain valid JSON")
+  return JSON.parse(match[0])
 }
 ```
 
 #### Worker Agent
-Claude Agent SDKで実行。1タスクを受け取り、worktreeで隔離実行する。
+Claude Code CLI headlessモードで実行。1タスクを受け取り、worktreeで隔離実行する。
 
 ```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk"
+import { spawn } from "node:child_process"
 
-for await (const msg of query({
-  prompt: task.description,
-  options: {
-    cwd: worktreePath,  // git worktreeで隔離
-    allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-    permissionMode: "bypassPermissions",
-    systemPrompt: WORKER_SYSTEM_PROMPT,
-    maxTurns: 30,
-    maxBudgetUsd: 1.0,
-  }
-})) { ... }
+function runWorker(task: Task, worktreePath: string): Promise<WorkerResult> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("claude", [
+      "-p", task.description,
+      "--allowedTools", "Read,Edit,Write,Bash,Glob,Grep",
+      "--output-format", "json",
+      "--max-turns", String(config.WORKER_MAX_TURNS),
+    ], {
+      cwd: worktreePath,  // git worktreeで隔離
+      timeout: config.WORKER_TIMEOUT_MS,
+    })
+
+    let stdout = ""
+    proc.stdout.on("data", (chunk) => {
+      stdout += chunk
+      appendLog(task.id, "worker", chunk.toString())  // リアルタイムログ記録
+    })
+
+    proc.on("close", (code) => {
+      resolve({ exit_code: code ?? 1, stdout })
+    })
+    proc.on("error", reject)
+  })
+}
 ```
 
 Workerの特徴：
 - worktreeで物理隔離（メインブランチを汚さない）
 - タスクごとにブランチを切る
-- 予算上限あり（`WORKER_MAX_BUDGET_USD`）
-- `permissionMode: "bypassPermissions"` — worktree内で自律実行するため人間の承認を挟まない
+- Max plan認証で定額内実行
+- spawnで起動し、stdoutをリアルタイムでtask_logsに記録
 
 **セキュリティ制約:**
 - `cwd` は必ずworktreeパスを指定（メインリポジトリ直下では実行しない）
 - `.worktrees/` ディレクトリは `.gitignore` に追加済み
 - Workerが生成したコードのマージはPM判断 or 人間承認を経由（Phase 1は人間承認）
 - ネットワークアクセスを伴うBashコマンドは許可（pnpm install等に必要）。ただし将来的にallow/denyリストで制御可能にする
+- `--max-turns` + spawnの `timeout` で暴走を二重に防止
 
 #### Task Queue（SQLite）
 
@@ -226,7 +243,7 @@ CREATE TABLE task_logs (
   id         TEXT PRIMARY KEY,
   task_id    TEXT NOT NULL REFERENCES tasks(id),
   agent      TEXT NOT NULL,     -- 'pm' | 'worker-0' | 'worker-1'
-  message    TEXT NOT NULL,     -- SDKからのメッセージ
+  message    TEXT NOT NULL,     -- CLIのstdout
   timestamp  TEXT NOT NULL
 );
 ```
@@ -236,7 +253,7 @@ AIの自己申告に依存せず、客観的な事実で判定する。
 
 ```typescript
 type ObservableFacts = {
-  exit_code: number           // Claude Agent SDK のプロセス終了コード
+  exit_code: number           // Claude Code CLIの終了コード
   files_changed: string[]     // git diff --name-only
   diff_stats: { additions: number; deletions: number }
   test_result?: {
@@ -268,10 +285,9 @@ type Config = {
   // 対象リポジトリ
   PROJECT_ROOT: string          // default: process.cwd()
 
-  // API制限
-  DAILY_BUDGET_USD: number      // default: 5.0（1日の累計上限）
-  WORKER_MAX_BUDGET_USD: number // default: 1.0（1タスクあたり）
+  // エージェント制限
   WORKER_MAX_TURNS: number      // default: 30
+  WORKER_TIMEOUT_MS: number     // default: 600000（10分）
   PM_MAX_TURNS: number          // default: 5
 
   // ループ制御
@@ -295,7 +311,7 @@ type Config = {
 
 | 領域 | 選定 | 理由 |
 |------|------|------|
-| エージェント実行 | `@anthropic-ai/claude-agent-sdk` | CLIツール群がそのまま使える、structured output対応 |
+| エージェント実行 | Claude Code CLI headless (`claude -p`) | Max plan定額で回せる、CLIツール群がそのまま使える |
 | daemon | Hono + Node.js | 軽量、TypeScript native |
 | DB | better-sqlite3 | 同期API、daemon内完結、ファイル1つ |
 | タスクID | ULID | 時系列ソート可能、衝突なし |
@@ -321,7 +337,7 @@ PM: CLAUDE.md + README を読む
 Worker: タスクA を取得
   │
   ├─→ worktree作成 (devpane-task-A ブランチ)
-  ├─→ Claude Agent SDK で実行
+  ├─→ Claude Code CLI headless で実行
   ├─→ Observable Facts 収集
   └─→ status → done, facts保存
   │
@@ -411,8 +427,8 @@ devpane/
 
 ### Step 3: エージェント層（← Step 2）
 - [ ] **3-1. Worker Agent**
-  - Claude Agent SDKのquery()呼び出し、worktree内で実行
-  - SDKメッセージをtask_logsに記録
+  - `claude -p` をspawnしてworktree内で実行
+  - stdoutをリアルタイムでtask_logsに記録
   - 完了条件: 手動で1タスク（例: "READMEにバッジを追加"）を実行して完了する
 - [ ] **3-2. Observable Facts収集**
   - Worker完了後にgit diff, pnpm test, pnpm lintを実行
@@ -420,14 +436,14 @@ devpane/
   - 完了条件: 3-1の結果からfactsが収集・保存される
 - [ ] **3-3. PM Agent**
   - buildPmPrompt()でコンテキスト構築
-  - structured outputでタスクリストを返す
+  - JSON出力をパースしてタスクリストを抽出
   - 返されたタスクをSQLiteに投入
   - 完了条件: PMがDevPaneのコードを読んでタスクを3個以上生成する
 
 ### Step 4: 統合（← Step 3）
 - [ ] **4-1. Scheduler**
   - PM → Queue → Worker → Facts → PM のループ制御
-  - エラーハンドリング、待機戦略、日次予算管理
+  - エラーハンドリング、待機戦略、レート制限対応
   - 完了条件: `pnpm start` でループが3周以上回る
 - [ ] **4-2. Hono APIエンドポイント**
   - GET /tasks（一覧）, GET /tasks/:id（詳細）, GET /logs/:taskId
@@ -446,7 +462,7 @@ devpane/
 | リスク | 影響 | 対策 |
 |--------|------|------|
 | PMのタスク生成が的外れ | 無駄なコード変更が増える | maxTurns/maxBudget制限、最初は保守的なsystemPromptで |
-| APIコストの暴走 | 請求爆発 | maxBudgetUsd設定、1日の累計上限をSchedulerで管理 |
+| Max planレート制限 | ループが頻繁に待機状態になる | ループ間隔の調整、レート制限到達時の指数バックオフ |
 | worktreeのコンフリクト | マージ失敗 | 小さなタスク粒度を維持、PM側で依存関係を考慮 |
 | Worker hang（無限ループ） | リソース占有 | maxTurns上限、タイムアウト設定 |
 | 自己開発で壊れる | daemon自体が動かなくなる | worktree隔離で本体を直接変更しない、マージは人間承認（初期） |
@@ -455,7 +471,7 @@ devpane/
 
 - PMのsystem promptの具体的な内容（プロジェクト分析の深さ、タスク粒度の指針）
 - マージの自動化タイミング（Phase 1は人間承認？PMに任せる？）
-- 1日あたりのAPI予算上限（具体的な金額）
+- Max planのティア選択（$100/月 vs $200/月、レート制限の差異）
 - Worker並列化の実装時期（Phase 1後？）
 - Web UI（Phase 2）の開始タイミング
 - GitHub Issues同期の優先度
