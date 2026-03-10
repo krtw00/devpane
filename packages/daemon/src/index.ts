@@ -1,11 +1,13 @@
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
+import { cors } from "hono/cors"
 import { config } from "./config.js"
 import { tasksApi } from "./api/tasks.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 
 const app = new Hono()
 
+app.use("*", cors())
 app.get("/health", (c) => c.json({ status: "ok" }))
 app.route("/tasks", tasksApi)
 
