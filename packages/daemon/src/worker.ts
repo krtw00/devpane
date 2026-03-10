@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process"
 import type { Task } from "@devpane/shared"
-import { config } from "./config.js"
 import { appendLog } from "./db.js"
 
 export type WorkerResult = {
@@ -20,7 +19,6 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
       "--output-format", "json",
     ], {
       cwd: worktreePath,
-      timeout: config.WORKER_TIMEOUT_MS,
       env,
     })
 

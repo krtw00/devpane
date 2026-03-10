@@ -5,20 +5,22 @@ import type { Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getRecentDone, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
 
-function spawnClaude(args: string[], cwd: string, stdin: string, timeoutMs: number): Promise<string> {
+function spawnClaude(args: string[], cwd: string, stdin: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const proc = spawn("claude", args, { cwd, timeout: timeoutMs, env })
+    const proc = spawn("claude", args, { cwd, env })
 
     let stdout = ""
     let stderr = ""
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
 
-    proc.on("close", (code) => {
-      if (code !== 0) {
+    proc.on("close", (code, signal) => {
+      if (signal) {
+        reject(new Error(`claude killed by signal ${signal} (timeout?). stderr: ${stderr.slice(0, 500)}`))
+      } else if (code !== 0) {
         const detail = stderr || stdout
         reject(new Error(`claude exited ${code}: ${detail.slice(0, 1000)}`))
       } else {
@@ -124,16 +126,11 @@ export async function runPm(): Promise<PmOutput> {
 
   const prompt = buildPmPrompt(context)
 
-  console.log("[pm] generating tasks...")
+  const args = ["-p", prompt, "--allowedTools", "Read,Glob,Grep", "--output-format", "json"]
+  console.log(`[pm] generating tasks... (prompt: ${prompt.length} chars, timeout: ${config.PM_TIMEOUT_MS}ms)`)
+  console.log(`[pm] running: claude ${args.filter(a => a !== prompt).join(" ")} [prompt omitted]`)
 
-  // Pass prompt directly as argument — execFile/spawn don't have shell
-  // argument length limits (Linux ARG_MAX is ~2MB, our prompt is <10KB)
-  const stdout = await spawnClaude(
-    ["-p", prompt, "--allowedTools", "Read,Glob,Grep", "--output-format", "json"],
-    config.PROJECT_ROOT,
-    "",
-    config.PM_TIMEOUT_MS,
-  )
+  const stdout = await spawnClaude(args, config.PROJECT_ROOT, "")
 
   const output = parsePmOutput(stdout)
   console.log(`[pm] generated ${output.tasks.length} tasks: ${output.reasoning}`)
