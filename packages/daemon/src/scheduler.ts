@@ -10,6 +10,7 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { updateClaudeMd } from "./claude-md.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -170,6 +171,15 @@ async function executeTask(task: Task): Promise<void> {
           }
           if (added.length > 0 || deleted.length > 0) {
             console.log(`[scheduler] memory: +${added.length} features, -${deleted.length} forgotten`)
+          }
+
+          // CLAUDE.md のタスクセクションを自動更新
+          try {
+            updateClaudeMd()
+            console.log(`[scheduler] CLAUDE.md updated after task ${task.id}`)
+          } catch (updateErr) {
+            const updateMsg = updateErr instanceof Error ? updateErr.message : String(updateErr)
+            console.warn(`[scheduler] CLAUDE.md update failed: ${updateMsg}`)
           }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)
