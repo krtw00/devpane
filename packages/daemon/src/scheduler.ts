@@ -1,4 +1,4 @@
-import type { Task } from "@devpane/shared"
+import type { Task, SchedulerStatus } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog, updateTaskCost } from "./db.js"
 import { createWorktree, removeWorktree, mergeToMain, getWorktreeNewAndDeleted } from "./worktree.js"
@@ -28,11 +28,42 @@ export function isRateLimitError(message: string): boolean {
 const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 
 let alive = true
+let paused = false
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+let startedAt = Date.now()
+let currentTaskId: string | null = null
+let currentTaskTitle: string | null = null
 
 export function stopScheduler(): void {
   alive = false
+}
+
+export function pauseScheduler(): void {
+  paused = true
+  broadcast("scheduler:status", getSchedulerStatus())
+}
+
+export function resumeScheduler(): void {
+  paused = false
+  broadcast("scheduler:status", getSchedulerStatus())
+}
+
+export function getSchedulerStatus(): SchedulerStatus {
+  return {
+    state: paused ? "paused" : "running",
+    current_task_id: currentTaskId,
+    current_task_title: currentTaskTitle,
+    uptime_sec: Math.floor((Date.now() - startedAt) / 1000),
+    rate_limit_hits: rateLimitHits,
+    started_at: new Date(startedAt).toISOString(),
+  }
+}
+
+async function waitWhilePaused(): Promise<void> {
+  while (paused && alive) {
+    await sleep(1000)
+  }
 }
 
 function getRateLimitBackoff(): number {
@@ -87,6 +118,8 @@ async function callPm(): Promise<Task[]> {
 async function executeTask(task: Task): Promise<void> {
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
+  currentTaskId = task.id
+  currentTaskTitle = task.title
   startTask(task.id, workerId)
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
@@ -172,6 +205,9 @@ async function executeTask(task: Task): Promise<void> {
       // ignore cleanup errors on failure path
     }
   }
+
+  currentTaskId = null
+  currentTaskTitle = null
 }
 
 function recoverOrphanTasks(): void {
@@ -188,9 +224,14 @@ function recoverOrphanTasks(): void {
 export async function startScheduler(): Promise<void> {
   console.log("[scheduler] starting autonomous loop")
   alive = true
+  paused = false
+  startedAt = Date.now()
   recoverOrphanTasks()
 
   while (alive) {
+    await waitWhilePaused()
+    if (!alive) break
+
     // 1. Check for pending tasks
     let task = getNextPending()
 

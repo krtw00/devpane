@@ -70,6 +70,29 @@ export async function fetchCostStats(): Promise<CostStats> {
   return fetchJson<CostStats>('/stats/cost')
 }
 
+export type SchedulerStatus = {
+  state: 'running' | 'paused'
+  current_task_id: string | null
+  current_task_title: string | null
+  uptime_sec: number
+  rate_limit_hits: number
+  started_at: string
+}
+
+export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
+  return fetchJson<SchedulerStatus>('/scheduler/status')
+}
+
+export async function pauseScheduler(): Promise<void> {
+  const res = await fetch(`${BASE}/scheduler/pause`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
+export async function resumeScheduler(): Promise<void> {
+  const res = await fetch(`${BASE}/scheduler/resume`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTasks, createTask, type Task } from '../composables/useApi'
+import { useTasks, createTask, fetchSchedulerStatus, pauseScheduler, resumeScheduler, type Task, type SchedulerStatus } from '../composables/useApi'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
 const route = useRoute()
@@ -50,22 +50,66 @@ watch(() => route.query, () => {
   sortKey.value = q.sort
 })
 
+const scheduler = ref<SchedulerStatus | null>(null)
+
+async function refreshScheduler() {
+  try {
+    scheduler.value = await fetchSchedulerStatus()
+  } catch {
+    // ignore fetch errors
+  }
+}
+
+async function toggleScheduler() {
+  if (!scheduler.value) return
+  const action = scheduler.value.state === 'running' ? 'pause' : 'resume'
+  const msg = action === 'pause'
+    ? 'スケジューラを一時停止しますか？'
+    : 'スケジューラを再開しますか？'
+  if (!confirm(msg)) return
+  try {
+    if (action === 'pause') await pauseScheduler()
+    else await resumeScheduler()
+    await refreshScheduler()
+  } catch {
+    // ignore errors
+  }
+}
+
+function formatUptime(sec: number): string {
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 const chatInput = ref('')
 const sending = ref(false)
 const chatLog = ref<{ from: string; text: string; time: string }[]>([])
 const chatEl = ref<HTMLElement | null>(null)
 
 let timer: ReturnType<typeof setInterval>
+let schedulerTimer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
+  refreshScheduler()
   timer = setInterval(refresh, 10000)
+  schedulerTimer = setInterval(refreshScheduler, 5000)
 })
 
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(timer)
+  clearInterval(schedulerTimer)
+})
 
 onWsEvent('task:created', () => refresh())
 onWsEvent('task:updated', () => refresh())
+onWsEvent('scheduler:status', (payload) => {
+  scheduler.value = payload as SchedulerStatus
+})
 onWsEvent('chat', (payload) => {
   const p = payload as { message: string; created_at: string }
   chatLog.value.push({ from: 'you', text: p.message, time: p.created_at })
@@ -167,6 +211,7 @@ function timeAgo(iso: string | null): string {
           <router-link to="/" class="active">Dashboard</router-link>
           <router-link to="/cost">Cost</router-link>
         </nav>
+        <span v-if="scheduler?.state === 'paused'" class="paused-badge">PAUSED</span>
         <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
           <span class="conn-dot" />
           {{ connected ? 'connected' : 'disconnected' }}
@@ -194,6 +239,18 @@ function timeAgo(iso: string | null): string {
         <span class="stat-num">{{ counts.failed }}</span>
         <span class="stat-label">failed</span>
       </div>
+    </div>
+
+    <div v-if="scheduler" class="scheduler-panel">
+      <div class="scheduler-info">
+        <span class="scheduler-state" :class="scheduler.state">{{ scheduler.state }}</span>
+        <span class="scheduler-detail">uptime: {{ formatUptime(scheduler.uptime_sec) }}</span>
+        <span v-if="scheduler.current_task_title" class="scheduler-detail">task: {{ scheduler.current_task_title }}</span>
+        <span v-if="scheduler.rate_limit_hits > 0" class="scheduler-detail scheduler-warn">rate-limits: {{ scheduler.rate_limit_hits }}</span>
+      </div>
+      <button class="scheduler-btn" :class="scheduler.state" @click="toggleScheduler">
+        {{ scheduler.state === 'running' ? 'Pause' : 'Resume' }}
+      </button>
     </div>
 
     <div class="filter-bar">
@@ -748,5 +805,88 @@ h1 {
 .modal-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.paused-badge {
+  background: #d29922;
+  color: #0d1117;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.scheduler-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.8rem;
+}
+
+.scheduler-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.scheduler-state {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.scheduler-state.running {
+  color: #3fb950;
+  background: #3fb95020;
+}
+
+.scheduler-state.paused {
+  color: #d29922;
+  background: #d2992220;
+}
+
+.scheduler-detail {
+  color: #8b949e;
+}
+
+.scheduler-warn {
+  color: #d29922;
+}
+
+.scheduler-btn {
+  background: #30363d;
+  color: #c9d1d9;
+  border: 1px solid #484f58;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scheduler-btn:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.scheduler-btn.paused {
+  background: #238636;
+  border-color: #238636;
+  color: #f0f6fc;
+}
+
+.scheduler-btn.paused:hover {
+  background: #2ea043;
+  border-color: #2ea043;
 }
 </style>
