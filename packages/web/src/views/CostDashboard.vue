@@ -37,6 +37,8 @@ const maxDailyCost = computed(() => {
         <nav class="nav-links">
           <router-link to="/">Dashboard</router-link>
           <router-link to="/cost" class="active">Cost</router-link>
+          <router-link to="/events">Events</router-link>
+          <router-link to="/improvements">Improvements</router-link>
         </nav>
       </div>
     </header>

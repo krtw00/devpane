@@ -82,6 +82,22 @@ export async function fetchEvents(limit = 100, type?: string): Promise<AgentEven
   return fetchJson<AgentEvent[]>(`/events?${params}`)
 }
 
+export type Improvement = {
+  id: string
+  trigger_analysis: string
+  target: string
+  action: string
+  applied_at: string
+  status: 'active' | 'reverted' | 'permanent'
+  before_metrics: string | null
+  after_metrics: string | null
+  verdict: string | null
+}
+
+export async function fetchImprovements(): Promise<Improvement[]> {
+  return fetchJson<Improvement[]>('/improvements')
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])

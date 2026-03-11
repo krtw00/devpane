@@ -78,6 +78,7 @@ function formatPayload(event: AgentEvent): string {
           <router-link to="/">Dashboard</router-link>
           <router-link to="/cost">Cost</router-link>
           <router-link to="/events" class="active">Events</router-link>
+          <router-link to="/improvements">Improvements</router-link>
         </nav>
         <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
           <span class="conn-dot" />
