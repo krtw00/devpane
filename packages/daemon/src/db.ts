@@ -28,6 +28,8 @@ function prepareStatements(db: Database.Database) {
     startTask: db.prepare(`UPDATE tasks SET status = 'running', started_at = ?, assigned_to = ? WHERE id = ?`),
     finishTask: db.prepare(`UPDATE tasks SET status = ?, finished_at = ?, result = ? WHERE id = ?`),
     revertToPending: db.prepare(`UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL WHERE id = ?`),
+    requeueTask: db.prepare(`UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL, finished_at = NULL, result = NULL, retry_count = retry_count + 1 WHERE id = ?`),
+    getRetryCount: db.prepare(`SELECT retry_count FROM tasks WHERE id = ?`),
     updateTaskCost: db.prepare(`UPDATE tasks SET cost_usd = ?, tokens_used = ? WHERE id = ?`),
     appendLog: db.prepare(`
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
@@ -153,6 +155,17 @@ export function finishTask(id: string, status: "done" | "failed", result: string
 export function revertToPending(id: string): void {
   getDb()
   stmts.revertToPending.run(id)
+}
+
+export function requeueTask(id: string): void {
+  getDb()
+  stmts.requeueTask.run(id)
+}
+
+export function getRetryCount(id: string): number {
+  getDb()
+  const row = stmts.getRetryCount.get(id) as { retry_count: number } | undefined
+  return row?.retry_count ?? 0
 }
 
 export function updateTaskCost(id: string, costUsd: number, tokensUsed: number): void {

@@ -14,13 +14,24 @@ export function collectFacts(
   // Collect diff stats
   const { filesChanged, additions, deletions } = getWorktreeDiff(taskId)
 
+  // Build first (required for monorepo — dist/ doesn't exist in worktree)
+  try {
+    execFileSync("pnpm", ["build"], {
+      cwd: worktreePath,
+      encoding: "utf-8",
+      timeout: 120000,
+    })
+  } catch {
+    // Build failure is not fatal for facts collection
+  }
+
   // Run tests if available
   let testResult: ObservableFacts["test_result"]
   try {
-    const result = execFileSync("pnpm", ["test", "--if-present"], {
+    const result = execFileSync("pnpm", ["test"], {
       cwd: worktreePath,
       encoding: "utf-8",
-      timeout: 60000,
+      timeout: 120000,
     })
     const passMatch = result.match(/(\d+)\s+pass/i)
     const failMatch = result.match(/(\d+)\s+fail/i)
@@ -30,9 +41,16 @@ export function collectFacts(
       exit_code: 0,
     }
   } catch (e) {
-    const err = e as { status?: number }
+    const err = e as { status?: number; stdout?: string; stderr?: string }
     if (err.status !== undefined) {
-      testResult = { passed: 0, failed: 1, exit_code: err.status ?? 1 }
+      const output = (err.stdout ?? "") + (err.stderr ?? "")
+      const passMatch = output.match(/(\d+)\s+pass/i)
+      const failMatch = output.match(/(\d+)\s+fail/i)
+      testResult = {
+        passed: passMatch ? Number(passMatch[1]) : 0,
+        failed: failMatch ? Number(failMatch[1]) : 1,
+        exit_code: err.status ?? 1,
+      }
     }
   }
 

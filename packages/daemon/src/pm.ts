@@ -61,6 +61,7 @@ function spawnClaude(args: string[], cwd: string, stdin: string): Promise<string
 type PmContext = {
   claudeMd: string
   readme: string
+  vision: string
   recentDone: Task[]
   failedTasks: Task[]
   pendingTasks: Task[]
@@ -119,6 +120,7 @@ function buildPmPrompt(context: PmContext): string {
     "## プロジェクト定義",
     context.claudeMd,
     context.readme ? `\n## README\n${context.readme}` : "",
+    context.vision ? `\n## 設計方針（docs/vision.md）\n${context.vision}` : "",
     "",
     "## 直近の完了タスク（最新5件）",
     context.recentDone.length > 0
@@ -178,6 +180,7 @@ export async function runPm(): Promise<PmOutput> {
   const context: PmContext = {
     claudeMd: readFileOr(join(config.PROJECT_ROOT, "CLAUDE.md"), "（CLAUDE.mdなし）"),
     readme: readFileOr(join(config.PROJECT_ROOT, "README.md"), ""),
+    vision: readFileOr(join(config.PROJECT_ROOT, "docs", "vision.md"), ""),
     recentDone: getRecentDone(5),
     failedTasks: getFailedTasks(),
     pendingTasks: getTasksByStatus("pending"),

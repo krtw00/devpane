@@ -1,6 +1,6 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog, updateTaskCost } from "./db.js"
+import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -128,11 +128,22 @@ async function executeTask(task: Task): Promise<void> {
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
       broadcast("task:updated", { id: task.id, status: "failed", result: facts })
     } else if (gate3.verdict === "recycle") {
-      console.log(`[scheduler] Gate 3 RECYCLE task ${task.id}: ${gate3.reasons.join("; ")}`)
-      finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
+      const MAX_RETRIES = 2
+      const retryCount = getRetryCount(task.id)
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
-      emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
-      broadcast("task:updated", { id: task.id, status: "failed", result: facts })
+
+      if (retryCount < MAX_RETRIES) {
+        console.log(`[scheduler] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
+        requeueTask(task.id)
+        appendLog(task.id, "system", `[gate3] recycled (retry ${retryCount + 1}/${MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
+        emit({ type: "task.started", taskId: task.id, workerId: "requeued" })
+        broadcast("task:updated", { id: task.id, status: "pending" })
+      } else {
+        console.log(`[scheduler] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
+        finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: { ...gate3, verdict: "kill", reasons: [...gate3.reasons, `max retries (${MAX_RETRIES}) exceeded`] } }))
+        emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
+        broadcast("task:updated", { id: task.id, status: "failed", result: facts })
+      }
     } else {
       // Gate 3 passed → PR作成
       finishTask(task.id, "done", JSON.stringify(facts))
