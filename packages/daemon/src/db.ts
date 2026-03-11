@@ -1,7 +1,12 @@
 import Database from "better-sqlite3"
 import { ulid } from "ulid"
+import { readFileSync, readdirSync } from "node:fs"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
 import { config } from "./config.js"
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let db: Database.Database
 let stmts: ReturnType<typeof prepareStatements>
@@ -37,38 +42,46 @@ function getDb(): Database.Database {
   return db
 }
 
-export function initDb(dbPath: string): Database.Database {
+function migrate(db: Database.Database, migrationsDir?: string): void {
+  const dir = migrationsDir ?? join(__dirname, "migrations")
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_versions (
+      version     INTEGER PRIMARY KEY,
+      filename    TEXT NOT NULL,
+      applied_at  TEXT NOT NULL
+    )
+  `)
+
+  const applied = new Set(
+    (db.prepare("SELECT version FROM schema_versions").all() as { version: number }[])
+      .map((r) => r.version),
+  )
+
+  const files = readdirSync(dir)
+    .filter((f: string) => /^\d{3}_.+\.sql$/.test(f))
+    .sort()
+
+  for (const file of files) {
+    const version = parseInt(file.slice(0, 3), 10)
+    if (applied.has(version)) continue
+
+    const sql = readFileSync(join(dir, file), "utf-8")
+    db.exec(sql)
+    db.prepare("INSERT INTO schema_versions (version, filename, applied_at) VALUES (?, ?, ?)").run(
+      version,
+      file,
+      new Date().toISOString(),
+    )
+  }
+}
+
+export function initDb(dbPath: string, migrationsDir?: string): Database.Database {
   db = new Database(dbPath)
   db.pragma("journal_mode = WAL")
   db.pragma("foreign_keys = ON")
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id          TEXT PRIMARY KEY,
-      title       TEXT NOT NULL,
-      description TEXT NOT NULL,
-      status      TEXT NOT NULL DEFAULT 'pending',
-      priority    INTEGER DEFAULT 0,
-      parent_id   TEXT REFERENCES tasks(id),
-      created_by  TEXT NOT NULL,
-      assigned_to TEXT,
-      created_at  TEXT NOT NULL,
-      started_at  TEXT,
-      finished_at TEXT,
-      result      TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS task_logs (
-      id        TEXT PRIMARY KEY,
-      task_id   TEXT NOT NULL,
-      agent     TEXT NOT NULL,
-      message   TEXT NOT NULL,
-      timestamp TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-    CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
-  `)
+  migrate(db, migrationsDir)
 
   stmts = prepareStatements(db)
   return db

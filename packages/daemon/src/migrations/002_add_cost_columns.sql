@@ -1,0 +1,2 @@
+ALTER TABLE tasks ADD COLUMN cost_usd REAL;
+ALTER TABLE tasks ADD COLUMN tokens_used INTEGER;
