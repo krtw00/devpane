@@ -1,6 +1,6 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog } from "./db.js"
+import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog, updateTaskCost } from "./db.js"
 import { createWorktree, removeWorktree, mergeToMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -106,6 +106,7 @@ async function executeTask(task: Task): Promise<void> {
     const status = result.exit_code === 0 ? "done" as const : "failed" as const
 
     finishTask(task.id, status, JSON.stringify(facts))
+    updateTaskCost(task.id, result.cost_usd, result.num_turns)
     broadcast("task:updated", { id: task.id, status, result: facts })
     console.log(`[scheduler] task ${task.id} ${status}: ${facts.files_changed.length} files changed`)
 

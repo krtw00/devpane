@@ -28,6 +28,7 @@ function prepareStatements(db: Database.Database) {
     startTask: db.prepare(`UPDATE tasks SET status = 'running', started_at = ?, assigned_to = ? WHERE id = ?`),
     finishTask: db.prepare(`UPDATE tasks SET status = ?, finished_at = ?, result = ? WHERE id = ?`),
     revertToPending: db.prepare(`UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL WHERE id = ?`),
+    updateTaskCost: db.prepare(`UPDATE tasks SET cost_usd = ?, tokens_used = ? WHERE id = ?`),
     appendLog: db.prepare(`
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
     `),
@@ -154,6 +155,11 @@ export function revertToPending(id: string): void {
   stmts.revertToPending.run(id)
 }
 
+export function updateTaskCost(id: string, costUsd: number, tokensUsed: number): void {
+  getDb()
+  stmts.updateTaskCost.run(costUsd, tokensUsed, id)
+}
+
 export function appendLog(taskId: string, agent: string, message: string): void {
   const id = ulid()
   const now = new Date().toISOString()
@@ -188,7 +194,7 @@ export function getCostStats() {
 
   const daily = d.prepare(`
     SELECT date(finished_at) AS date, SUM(cost_usd) AS cost, COUNT(*) AS tasks
-    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at IS NOT NULL
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > datetime('now', '-30 days')
     GROUP BY date(finished_at) ORDER BY date ASC
   `).all() as { date: string; cost: number; tasks: number }[]
 

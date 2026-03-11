@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { initDb, closeDb, createTask, getTask, getNextPending, getAllTasks, getTasksByStatus, getRecentDone, getFailedTasks, startTask, finishTask, revertToPending, appendLog, getTaskLogs } from "../db.js"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+import { initDb, closeDb, createTask, getTask, getNextPending, getAllTasks, getTasksByStatus, getRecentDone, getFailedTasks, startTask, finishTask, revertToPending, appendLog, getTaskLogs, updateTaskCost, getCostStats } from "../db.js"
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+// __dirname may resolve to dist/__tests__ or src/__tests__; always use src/migrations
+const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
 describe("db", () => {
   beforeEach(() => {
-    initDb(":memory:")
+    initDb(":memory:", migrationsDir)
   })
 
   afterEach(() => {
@@ -167,6 +173,38 @@ describe("db", () => {
 
     it("returns empty array for unknown task", () => {
       expect(getTaskLogs("unknown")).toEqual([])
+    })
+  })
+
+  describe("updateTaskCost / getCostStats", () => {
+    it("updates cost and tokens on a task", () => {
+      const task = createTask("Cost test", "desc", "pm")
+      startTask(task.id, "worker-0")
+      finishTask(task.id, "done", null)
+      updateTaskCost(task.id, 0.05, 1200)
+
+      const updated = getTask(task.id)!
+      expect(updated.cost_usd).toBe(0.05)
+      expect(updated.tokens_used).toBe(1200)
+    })
+
+    it("returns aggregated cost stats", () => {
+      const t1 = createTask("A", "d", "pm")
+      const t2 = createTask("B", "d", "pm")
+      startTask(t1.id, "w")
+      startTask(t2.id, "w")
+      finishTask(t1.id, "done", null)
+      finishTask(t2.id, "done", null)
+      updateTaskCost(t1.id, 0.10, 500)
+      updateTaskCost(t2.id, 0.20, 800)
+
+      const stats = getCostStats()
+      expect(stats.total_cost).toBeCloseTo(0.30)
+      expect(stats.total_tasks).toBe(2)
+      expect(stats.avg_cost).toBeCloseTo(0.15)
+      expect(stats.cost_24h).toBeCloseTo(0.30)
+      expect(stats.cost_7d).toBeCloseTo(0.30)
+      expect(stats.daily).toHaveLength(1)
     })
   })
 })

@@ -18,6 +18,8 @@ export type Task = {
   started_at: string | null
   finished_at: string | null
   result: string | null // JSON stringified ObservableFacts
+  cost_usd: number
+  tokens_used: number
 }
 
 // Observable Facts — Worker完了後にdaemonが客観的に収集する事実
