@@ -52,6 +52,7 @@ watch(() => route.query, () => {
 
 const chatInput = ref('')
 const sending = ref(false)
+const chatCategory = ref<'none' | 'decision' | 'lesson'>('none')
 const chatLog = ref<{ from: string; text: string; time: string }[]>([])
 const chatEl = ref<HTMLElement | null>(null)
 
@@ -67,8 +68,9 @@ onUnmounted(() => clearInterval(timer))
 onWsEvent('task:created', () => refresh())
 onWsEvent('task:updated', () => refresh())
 onWsEvent('chat', (payload) => {
-  const p = payload as { message: string; created_at: string }
-  chatLog.value.push({ from: 'you', text: p.message, time: p.created_at })
+  const p = payload as { message: string; created_at: string; category: string | null }
+  const label = p.category ? `you:${p.category}` : 'you'
+  chatLog.value.push({ from: label, text: p.message, time: p.created_at })
   nextTick(() => chatEl.value?.scrollTo(0, chatEl.value.scrollHeight))
 })
 
@@ -78,7 +80,8 @@ async function send() {
   sending.value = true
   chatInput.value = ''
   try {
-    await sendChat(msg)
+    const cat = chatCategory.value !== 'none' ? chatCategory.value : undefined
+    await sendChat(msg, cat)
   } finally {
     sending.value = false
   }
@@ -265,6 +268,11 @@ function timeAgo(iso: string | null): string {
         <div v-if="chatLog.length === 0" class="chat-empty">send a message to create a task</div>
       </div>
       <form class="chat-form" @submit.prevent="send">
+        <select v-model="chatCategory" class="chat-category">
+          <option value="none">task only</option>
+          <option value="decision">decision</option>
+          <option value="lesson">lesson</option>
+        </select>
         <input
           v-model="chatInput"
           class="chat-input"
@@ -603,6 +611,22 @@ h1 {
 .chat-form {
   display: flex;
   gap: 0.5rem;
+}
+
+.chat-category {
+  background: #161b22;
+  color: #8b949e;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.5rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.chat-category:focus {
+  border-color: #58a6ff;
 }
 
 .chat-input {

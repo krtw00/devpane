@@ -71,10 +71,10 @@ export function onWsEvent(type: string, handler: Handler) {
   })
 }
 
-export function sendChat(message: string): Promise<unknown> {
+export function sendChat(message: string, category?: string): Promise<unknown> {
   return fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, category }),
   }).then(r => r.json())
 }
