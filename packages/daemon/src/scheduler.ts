@@ -28,9 +28,19 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+let lastPmRunAt: string | null = null
 
 export function stopScheduler(): void {
   alive = false
+}
+
+export function getSchedulerState() {
+  return {
+    alive,
+    pmConsecutiveFailures,
+    rateLimitHits,
+    lastPmRunAt,
+  }
 }
 
 function getRateLimitBackoff(): number {
@@ -57,6 +67,7 @@ async function callPm(): Promise<Task[]> {
   try {
     const output = await runPm()
     pmConsecutiveFailures = 0
+    lastPmRunAt = new Date().toISOString()
     clearRateLimit()
     return ingestPmTasks(output)
   } catch (err) {

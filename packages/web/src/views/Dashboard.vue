@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useTasks, type Task } from '../composables/useApi'
+import { useTasks, useHealth, type Task } from '../composables/useApi'
 
 const { tasks, loading, refresh } = useTasks()
+const { connected, refresh: refreshHealth } = useHealth()
 
-let timer: ReturnType<typeof setInterval>
+let taskTimer: ReturnType<typeof setInterval>
+let healthTimer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 5000) // poll every 5s
+  refreshHealth()
+  taskTimer = setInterval(refresh, 5000)
+  healthTimer = setInterval(refreshHealth, 30000)
 })
 
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(taskTimer)
+  clearInterval(healthTimer)
+})
 
 const statusOrder: Record<string, number> = { running: 0, pending: 1, failed: 2, done: 3 }
 
@@ -43,8 +50,16 @@ function timeAgo(iso: string | null): string {
 <template>
   <div class="dashboard">
     <header>
-      <h1>DevPane</h1>
-      <span class="subtitle">the office window</span>
+      <div class="header-row">
+        <div>
+          <h1>DevPane</h1>
+          <span class="subtitle">the office window</span>
+        </div>
+        <div class="daemon-status">
+          <span class="status-dot" :class="connected ? 'dot-ok' : 'dot-err'" />
+          <span class="status-text">{{ connected ? 'connected' : 'disconnected' }}</span>
+        </div>
+      </div>
     </header>
 
     <div class="stats">
@@ -103,6 +118,12 @@ header {
   margin-bottom: 2rem;
 }
 
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 h1 {
   font-size: 1.5rem;
   margin: 0;
@@ -112,6 +133,34 @@ h1 {
 .subtitle {
   color: #8b949e;
   font-size: 0.85rem;
+}
+
+.daemon-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-ok {
+  background: #3fb950;
+  box-shadow: 0 0 6px #3fb95080;
+}
+
+.dot-err {
+  background: #f85149;
+  box-shadow: 0 0 6px #f8514980;
+}
+
+.status-text {
+  font-size: 0.75rem;
+  color: #8b949e;
 }
 
 .stats {

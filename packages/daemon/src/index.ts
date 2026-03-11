@@ -3,12 +3,13 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { config } from "./config.js"
 import { tasksApi } from "./api/tasks.js"
+import { healthApi } from "./api/health.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 
 const app = new Hono()
 
 app.use("*", cors())
-app.get("/health", (c) => c.json({ status: "ok" }))
+app.route("/health", healthApi)
 app.route("/tasks", tasksApi)
 
 console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
