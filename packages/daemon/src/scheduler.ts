@@ -7,6 +7,9 @@ import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
 import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
+import { emit } from "./events.js"
+import { runGate3 } from "./gate.js"
+import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -56,11 +59,16 @@ function clearRateLimit(): void {
 }
 
 async function callPm(): Promise<Task[]> {
+  emit({ type: "pm.invoked", reason: "queue_empty" })
   try {
     const output = await runPm()
     pmConsecutiveFailures = 0
     clearRateLimit()
-    return ingestPmTasks(output)
+    const tasks = ingestPmTasks(output)
+    for (const t of tasks) {
+      emit({ type: "task.created", taskId: t.id, by: "pm" })
+    }
+    return tasks
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
 
@@ -70,6 +78,7 @@ async function callPm(): Promise<Task[]> {
     }
 
     pmConsecutiveFailures++
+    emit({ type: "pm.failed", error: msg, consecutiveCount: pmConsecutiveFailures })
     console.error(`[scheduler] PM failed (${pmConsecutiveFailures}x): ${msg}`)
     appendLog("scheduler", "pm", `[error] PM failed: ${msg}`)
 
@@ -88,6 +97,7 @@ async function executeTask(task: Task): Promise<void> {
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
   startTask(task.id, workerId)
+  emit({ type: "task.started", taskId: task.id, workerId })
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
   let worktreePath: string
@@ -97,45 +107,74 @@ async function executeTask(task: Task): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[scheduler] worktree creation failed: ${msg}`)
     finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
+    emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
     broadcast("task:updated", { id: task.id, status: "failed" })
     return
   }
 
   try {
+    const startTime = Date.now()
     const result = await runWorker(task, worktreePath)
+    const executionMs = Date.now() - startTime
     const facts = collectFacts(task.id, task.title, worktreePath, result.exit_code)
-    const status = result.exit_code === 0 ? "done" as const : "failed" as const
 
-    finishTask(task.id, status, JSON.stringify(facts))
-    updateTaskCost(task.id, result.cost_usd, result.num_turns)
-    broadcast("task:updated", { id: task.id, status, result: facts })
-    console.log(`[scheduler] task ${task.id} ${status}: ${facts.files_changed.length} files changed`)
+    // Gate 3: Observable Facts判定（原理1: 判定はコード）
+    const gate3 = runGate3(task.id, facts)
+
+    if (gate3.verdict === "kill") {
+      console.log(`[scheduler] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
+      finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
+      updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
+      broadcast("task:updated", { id: task.id, status: "failed", result: facts })
+    } else if (gate3.verdict === "recycle") {
+      console.log(`[scheduler] Gate 3 RECYCLE task ${task.id}: ${gate3.reasons.join("; ")}`)
+      finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
+      updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
+      broadcast("task:updated", { id: task.id, status: "failed", result: facts })
+    } else {
+      // Gate 3 passed → PR作成
+      finishTask(task.id, "done", JSON.stringify(facts))
+      updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
+      broadcast("task:updated", { id: task.id, status: "done", result: facts })
+      console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
+
+      // PR作成
+      if (facts.commit_hash) {
+        const { added, deleted } = getWorktreeNewAndDeleted(task.id)
+        const prUrl = createPullRequest(task.id, task.title, facts)
+        if (prUrl) {
+          console.log(`[scheduler] PR created for task ${task.id}: ${prUrl}`)
+          appendLog(task.id, "system", `[pr] ${prUrl}`)
+          emit({ type: "pr.created", taskId: task.id, url: prUrl })
+
+          for (const file of added) {
+            remember("feature", `${file} を追加（${task.title}）`, task.id)
+          }
+          for (const file of deleted) {
+            const existing = findSimilar("feature", file)
+            for (const m of existing) forget(m.id)
+          }
+          if (added.length > 0 || deleted.length > 0) {
+            console.log(`[scheduler] memory: +${added.length} features, -${deleted.length} forgotten`)
+          }
+        } else {
+          console.error(`[scheduler] PR creation failed for task ${task.id}`)
+        }
+      }
+    }
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
 
-    // Create PR for successful tasks (human reviews and merges)
-    if (status === "done" && facts.commit_hash) {
-      const { added, deleted } = getWorktreeNewAndDeleted(task.id)
-
-      const prUrl = createPullRequest(task.id, task.title, facts)
-      if (prUrl) {
-        console.log(`[scheduler] PR created for task ${task.id}: ${prUrl}`)
-        appendLog(task.id, "system", `[pr] ${prUrl}`)
-
-        // Record new files as features
-        for (const file of added) {
-          remember("feature", `${file} を追加（${task.title}）`, task.id)
-        }
-        // Forget deleted files
-        for (const file of deleted) {
-          const existing = findSimilar("feature", file)
-          for (const m of existing) forget(m.id)
-        }
-        if (added.length > 0 || deleted.length > 0) {
-          console.log(`[scheduler] memory: +${added.length} features, -${deleted.length} forgotten`)
-        }
-      } else {
-        console.error(`[scheduler] PR creation failed for task ${task.id}`)
+    // SPC: メトリクス記録 + 管理図チェック
+    const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
+    recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
+    const spcAlerts = checkAllMetrics(task.id, result.cost_usd, executionMs, diffSize)
+    for (const alert of spcAlerts) {
+      if (alert.alert) {
+        console.warn(`[scheduler] SPC alert: ${alert.metric} = ${alert.value.toFixed(4)} (UCL: ${alert.ucl.toFixed(4)}) — ${alert.reason}`)
       }
     }
 
@@ -146,7 +185,7 @@ async function executeTask(task: Task): Promise<void> {
     }
 
     // Cleanup worktree (keep branch if PR was created)
-    const hasPr = status === "done" && facts.commit_hash
+    const hasPr = gate3.verdict === "go" && facts.commit_hash
     try {
       removeWorktree(task.id, !!hasPr)
       console.log(`[scheduler] cleaned up worktree for task ${task.id}${hasPr ? " (branch kept for PR)" : ""}`)
@@ -159,10 +198,12 @@ async function executeTask(task: Task): Promise<void> {
 
     if (isRateLimitError(msg)) {
       revertToPending(task.id)
+      emit({ type: "worker.rate_limited", backoffSec: getRateLimitBackoff() })
       await handleRateLimit("Worker")
     } else {
       console.error(`[scheduler] worker error: ${msg}`)
       finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
+      emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
     }
 
     // Cleanup worktree on failure too

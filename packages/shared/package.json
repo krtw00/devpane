@@ -9,6 +9,10 @@
     ".": {
       "import": "./dist/types.js",
       "types": "./dist/types.d.ts"
+    },
+    "./schemas": {
+      "import": "./dist/schemas.js",
+      "types": "./dist/schemas.d.ts"
     }
   },
   "scripts": {
@@ -16,5 +20,8 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
   }
 }

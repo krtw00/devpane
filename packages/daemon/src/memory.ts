@@ -2,7 +2,8 @@ import { ulid } from "ulid"
 import type { Memory, MemoryCategory } from "@devpane/shared"
 import { getDb } from "./db.js"
 
-let stmts: ReturnType<typeof prepare>
+let stmts: ReturnType<typeof prepare> | null = null
+let stmtsDb: ReturnType<typeof getDb> | null = null
 
 function prepare() {
   const db = getDb()
@@ -20,7 +21,11 @@ function prepare() {
 }
 
 function getStmts() {
-  if (!stmts) stmts = prepare()
+  const db = getDb()
+  if (!stmts || stmtsDb !== db) {
+    stmts = prepare()
+    stmtsDb = db
+  }
   return stmts
 }
 

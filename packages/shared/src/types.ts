@@ -67,6 +67,30 @@ export type Memory = {
   updated_at: string // ISO 8601
 }
 
+// Improvement — 自己改善の履歴
+export type ImprovementStatus = "active" | "reverted" | "permanent"
+
+export type Improvement = {
+  id: string
+  trigger_analysis: string // JSON
+  target: string
+  action: string
+  applied_at: string
+  status: ImprovementStatus
+  before_metrics: string | null // JSON
+  after_metrics: string | null // JSON
+  verdict: string | null // 'effective' | 'ineffective' | 'harmful'
+}
+
+// SPC Metric — 管理図用時系列データ
+export type SpcMetric = {
+  id: string
+  task_id: string
+  metric: string // 'cost_usd' | 'execution_time' | 'diff_size'
+  value: number
+  recorded_at: string
+}
+
 // Config
 export type Config = {
   PROJECT_ROOT: string
