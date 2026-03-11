@@ -84,6 +84,20 @@ export function mergeToMain(taskId: string, title: string): void {
   }
 }
 
+export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; deleted: string[] } {
+  const path = join(WORKTREE_DIR, `task-${taskId}`)
+  try {
+    const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", "HEAD~1"], { cwd: path, encoding: "utf-8" }).trim()
+    const deleted = execFileSync("git", ["diff", "--diff-filter=D", "--name-only", "HEAD~1"], { cwd: path, encoding: "utf-8" }).trim()
+    return {
+      added: added ? added.split("\n") : [],
+      deleted: deleted ? deleted.split("\n") : [],
+    }
+  } catch {
+    return { added: [], deleted: [] }
+  }
+}
+
 export function getWorktreeDiff(taskId: string): { filesChanged: string[]; additions: number; deletions: number } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {

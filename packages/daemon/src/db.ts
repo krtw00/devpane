@@ -36,7 +36,7 @@ function prepareStatements(db: Database.Database) {
   }
 }
 
-function getDb(): Database.Database {
+export function getDb(): Database.Database {
   if (!db) {
     initDb(config.DB_PATH)
   }

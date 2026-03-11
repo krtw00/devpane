@@ -1,11 +1,12 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog, updateTaskCost } from "./db.js"
-import { createWorktree, removeWorktree, mergeToMain } from "./worktree.js"
+import { createWorktree, removeWorktree, mergeToMain, getWorktreeNewAndDeleted } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
 import { broadcast } from "./ws.js"
+import { remember, forget, findSimilar } from "./memory.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -112,11 +113,27 @@ async function executeTask(task: Task): Promise<void> {
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
 
-    // Merge successful tasks to main
+    // Merge successful tasks to main and update memories
     if (status === "done" && facts.commit_hash) {
+      // Collect new/deleted files before worktree cleanup
+      const { added, deleted } = getWorktreeNewAndDeleted(task.id)
+
       try {
         mergeToMain(task.id, task.title)
         console.log(`[scheduler] merged task ${task.id} to main`)
+
+        // Record new files as features
+        for (const file of added) {
+          remember("feature", `${file} を追加（${task.title}）`, task.id)
+        }
+        // Forget deleted files
+        for (const file of deleted) {
+          const existing = findSimilar("feature", file)
+          for (const m of existing) forget(m.id)
+        }
+        if (added.length > 0 || deleted.length > 0) {
+          console.log(`[scheduler] memory: +${added.length} features, -${deleted.length} forgotten`)
+        }
       } catch (mergeErr) {
         const mergeMsg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr)
         console.error(`[scheduler] merge failed for ${task.id}: ${mergeMsg}`)

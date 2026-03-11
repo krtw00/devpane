@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
-import type { Task, PmOutput } from "@devpane/shared"
+import type { Task, Memory, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getRecentDone, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
+import { recall } from "./memory.js"
 
 const activeProcs = new Set<ChildProcess>()
 
@@ -62,6 +63,7 @@ type PmContext = {
   recentDone: Task[]
   failedTasks: Task[]
   pendingTasks: Task[]
+  memories: Memory[]
 }
 
 function readFileOr(path: string, fallback: string): string {
@@ -85,6 +87,32 @@ function summarizeFacts(resultJson: string | null): string {
   }
 }
 
+function formatMemories(memories: Memory[]): string[] {
+  if (memories.length === 0) return ["（記憶なし — 初回起動）"]
+
+  const grouped = new Map<string, Memory[]>()
+  for (const m of memories) {
+    const list = grouped.get(m.category) ?? []
+    list.push(m)
+    grouped.set(m.category, list)
+  }
+
+  const labels: Record<string, string> = {
+    feature: "実装済み機能",
+    decision: "アーキテクチャ判断",
+    lesson: "学んだ教訓",
+  }
+
+  const lines: string[] = []
+  for (const [cat, items] of grouped) {
+    lines.push(`### ${labels[cat] ?? cat}`)
+    for (const m of items) {
+      lines.push(`- ${m.content}`)
+    }
+  }
+  return lines
+}
+
 function buildPmPrompt(context: PmContext): string {
   return [
     "## プロジェクト定義",
@@ -106,7 +134,11 @@ function buildPmPrompt(context: PmContext): string {
       ? context.pendingTasks.map(t => `- [pending] ${t.title}`).join("\n")
       : "（なし）",
     "",
+    "## プロジェクト記憶",
+    ...formatMemories(context.memories),
+    "",
     "上記を踏まえ、次に実装すべきタスクを優先度順に生成せよ。",
+    "既に実装済みの機能を壊したり削除するタスクは生成しないこと。",
     "既にpendingのタスクと重複しないこと。",
     "各タスクのdescriptionは、Workerが単独で実装できる具体的な指示にすること。",
     "",
@@ -142,6 +174,7 @@ export async function runPm(): Promise<PmOutput> {
     recentDone: getRecentDone(5),
     failedTasks: getFailedTasks(),
     pendingTasks: getTasksByStatus("pending"),
+    memories: recall(),
   }
 
   const prompt = buildPmPrompt(context)

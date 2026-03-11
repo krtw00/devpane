@@ -55,6 +55,18 @@ export type PmOutput = {
   reasoning: string
 }
 
+// Memory — PMの永続記憶
+export type MemoryCategory = "feature" | "decision" | "lesson"
+
+export type Memory = {
+  id: string // ULID
+  category: MemoryCategory
+  content: string
+  source_task_id: string | null
+  created_at: string // ISO 8601
+  updated_at: string // ISO 8601
+}
+
 // Config
 export type Config = {
   PROJECT_ROOT: string
