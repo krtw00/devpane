@@ -185,6 +185,61 @@ export function getTaskLogs(taskId: string): TaskLog[] {
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
 }
 
+export type SpcMetricRow = {
+  id: string
+  task_id: string
+  metric: string
+  value: number
+  recorded_at: string
+}
+
+export type SpcSummaryRow = {
+  metric: string
+  mean: number
+  ucl: number
+  lcl: number
+  count: number
+}
+
+export function getSpcMetrics(metric: string, limit: number): SpcMetricRow[] {
+  const d = getDb()
+  return d.prepare(
+    `SELECT id, task_id, metric, value, recorded_at
+     FROM spc_metrics WHERE metric = ? ORDER BY recorded_at DESC LIMIT ?`,
+  ).all(metric, limit) as SpcMetricRow[]
+}
+
+export function getSpcSummary(): SpcSummaryRow[] {
+  const d = getDb()
+  const metrics = ["cost_usd", "execution_time", "diff_size"] as const
+  const results: SpcSummaryRow[] = []
+
+  for (const metric of metrics) {
+    const rows = d.prepare(
+      `SELECT value FROM spc_metrics WHERE metric = ? ORDER BY recorded_at DESC LIMIT 20`,
+    ).all(metric) as { value: number }[]
+
+    if (rows.length < 2) {
+      results.push({ metric, mean: 0, ucl: 0, lcl: 0, count: rows.length })
+      continue
+    }
+
+    const values = rows.map((r) => r.value)
+    const mean = values.reduce((a, b) => a + b, 0) / values.length
+    const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length
+    const stddev = Math.sqrt(variance)
+    results.push({
+      metric,
+      mean,
+      ucl: mean + 3 * stddev,
+      lcl: Math.max(0, mean - 3 * stddev),
+      count: rows.length,
+    })
+  }
+
+  return results
+}
+
 export function getCostStats() {
   const d = getDb()
 

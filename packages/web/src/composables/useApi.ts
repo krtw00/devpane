@@ -82,6 +82,31 @@ export async function fetchEvents(limit = 100, type?: string): Promise<AgentEven
   return fetchJson<AgentEvent[]>(`/events?${params}`)
 }
 
+export type SpcMetricPoint = {
+  id: string
+  task_id: string
+  metric: string
+  value: number
+  recorded_at: string
+}
+
+export type SpcSummary = {
+  metric: string
+  mean: number
+  ucl: number
+  lcl: number
+  count: number
+}
+
+export async function fetchSpcMetrics(metric: string, limit = 50): Promise<SpcMetricPoint[]> {
+  const params = new URLSearchParams({ metric, limit: String(limit) })
+  return fetchJson<SpcMetricPoint[]>(`/spc/metrics?${params}`)
+}
+
+export async function fetchSpcSummary(): Promise<SpcSummary[]> {
+  return fetchJson<SpcSummary[]>('/spc/summary')
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])
