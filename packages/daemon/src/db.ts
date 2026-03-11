@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 import { readFileSync, readdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
+import type { Task, TaskLog, TaskStatus, TaskCreator, Improvement } from "@devpane/shared"
 import { config } from "./config.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -25,6 +25,11 @@ function prepareStatements(db: Database.Database) {
     getTasksByStatus: db.prepare(`SELECT * FROM tasks WHERE status = ? ORDER BY priority DESC, created_at ASC`),
     getRecentDone: db.prepare(`SELECT * FROM tasks WHERE status = 'done' ORDER BY finished_at DESC LIMIT ?`),
     getFailedTasks: db.prepare(`SELECT * FROM tasks WHERE status = 'failed' ORDER BY finished_at DESC`),
+    getRecentFailed: db.prepare(`SELECT * FROM tasks WHERE status = 'failed' ORDER BY finished_at DESC LIMIT ?`),
+    insertImprovement: db.prepare(`
+      INSERT INTO improvements (id, trigger_analysis, target, action, applied_at, status)
+      VALUES (?, ?, ?, ?, ?, 'active')
+    `),
     startTask: db.prepare(`UPDATE tasks SET status = 'running', started_at = ?, assigned_to = ? WHERE id = ?`),
     finishTask: db.prepare(`UPDATE tasks SET status = ?, finished_at = ?, result = ? WHERE id = ?`),
     revertToPending: db.prepare(`UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL WHERE id = ?`),
@@ -138,6 +143,23 @@ export function getRecentDone(limit = 5): Task[] {
 export function getFailedTasks(): Task[] {
   getDb()
   return stmts.getFailedTasks.all() as Task[]
+}
+
+export function getRecentFailed(limit = 10): Task[] {
+  getDb()
+  return stmts.getRecentFailed.all(limit) as Task[]
+}
+
+export function insertImprovement(
+  triggerAnalysis: string,
+  target: string,
+  action: string,
+): Improvement {
+  const id = ulid()
+  const now = new Date().toISOString()
+  getDb()
+  stmts.insertImprovement.run(id, triggerAnalysis, target, action, now)
+  return { id, trigger_analysis: triggerAnalysis, target, action, applied_at: now, status: "active", before_metrics: null, after_metrics: null, verdict: null }
 }
 
 export function startTask(id: string, assignedTo: string): void {

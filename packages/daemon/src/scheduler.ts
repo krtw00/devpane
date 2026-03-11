@@ -10,6 +10,7 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { runWhyWhyAnalysis } from "./whywhy.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -33,6 +34,8 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+let failedTaskCount = 0
+const WHYWHY_THRESHOLD = 10
 
 export function stopScheduler(): void {
   alive = false
@@ -186,6 +189,21 @@ async function executeTask(task: Task): Promise<void> {
     for (const alert of spcAlerts) {
       if (alert.alert) {
         console.warn(`[scheduler] SPC alert: ${alert.metric} = ${alert.value.toFixed(4)} (UCL: ${alert.ucl.toFixed(4)}) — ${alert.reason}`)
+      }
+    }
+
+    // WhyWhy: failed件数がしきい値に達したら分析実行
+    if (gate3.verdict !== "go") {
+      failedTaskCount++
+      if (failedTaskCount >= WHYWHY_THRESHOLD) {
+        failedTaskCount = 0
+        try {
+          console.log("[scheduler] triggering WhyWhy analysis")
+          await runWhyWhyAnalysis(WHYWHY_THRESHOLD)
+        } catch (whyErr) {
+          const whyMsg = whyErr instanceof Error ? whyErr.message : String(whyErr)
+          console.warn(`[scheduler] WhyWhy analysis failed: ${whyMsg}`)
+        }
       }
     }
 
