@@ -9,6 +9,9 @@ import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
+import { runGate1 } from "./gate1.js"
+import { runTester } from "./tester.js"
+import { runGate2 } from "./gate2.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 
 function sleep(ms: number): Promise<void> {
@@ -264,10 +267,64 @@ export async function startScheduler(): Promise<void> {
       if (!task) continue
     }
 
-    // 3. Execute the task
+    // 3. Gate 1: PMタスク品質検証
+    const gate1 = runGate1(task)
+    if (gate1.verdict === "kill") {
+      console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
+      finishTask(task.id, "failed", JSON.stringify({ gate1 }))
+      emit({ type: "task.failed", taskId: task.id, rootCause: gate1.failure?.root_cause ?? "spec_ambiguity" })
+      broadcast("task:updated", { id: task.id, status: "failed" })
+      await sleep(1000)
+      continue
+    }
+    if (gate1.verdict === "recycle") {
+      console.log(`[scheduler] Gate 1 RECYCLE task ${task.id}: ${gate1.reasons.join("; ")}`)
+      requeueTask(task.id)
+      broadcast("task:updated", { id: task.id, status: "pending" })
+      await sleep(1000)
+      continue
+    }
+
+    // 4. Tester: テスト可能性検証
+    const tester = runTester(task)
+    if (tester.verdict === "kill") {
+      console.log(`[scheduler] Tester KILL task ${task.id}: ${tester.reasons.join("; ")}`)
+      finishTask(task.id, "failed", JSON.stringify({ tester }))
+      emit({ type: "task.failed", taskId: task.id, rootCause: tester.failure?.root_cause ?? "spec_ambiguity" })
+      broadcast("task:updated", { id: task.id, status: "failed" })
+      await sleep(1000)
+      continue
+    }
+    if (tester.verdict === "recycle") {
+      console.log(`[scheduler] Tester RECYCLE task ${task.id}: ${tester.reasons.join("; ")}`)
+      requeueTask(task.id)
+      broadcast("task:updated", { id: task.id, status: "pending" })
+      await sleep(1000)
+      continue
+    }
+
+    // 5. Gate 2: Worker実行前最終検証
+    const gate2 = runGate2(task)
+    if (gate2.verdict === "kill") {
+      console.log(`[scheduler] Gate 2 KILL task ${task.id}: ${gate2.reasons.join("; ")}`)
+      finishTask(task.id, "failed", JSON.stringify({ gate2 }))
+      emit({ type: "task.failed", taskId: task.id, rootCause: gate2.failure?.root_cause ?? "unknown" })
+      broadcast("task:updated", { id: task.id, status: "failed" })
+      await sleep(1000)
+      continue
+    }
+    if (gate2.verdict === "recycle") {
+      console.log(`[scheduler] Gate 2 RECYCLE task ${task.id}: ${gate2.reasons.join("; ")}`)
+      requeueTask(task.id)
+      broadcast("task:updated", { id: task.id, status: "pending" })
+      await sleep(1000)
+      continue
+    }
+
+    // 6. Execute the task (Worker → Gate 3)
     await executeTask(task)
 
-    // 4. Brief pause between tasks to avoid hammering
+    // 7. Brief pause between tasks to avoid hammering
     await sleep(1000)
   }
 
