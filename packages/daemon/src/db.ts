@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 import { readFileSync, readdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
+import type { Task, TaskLog, TaskStatus, TaskCreator, Improvement } from "@devpane/shared"
 import { config } from "./config.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -25,6 +25,8 @@ function prepareStatements(db: Database.Database) {
     getTasksByStatus: db.prepare(`SELECT * FROM tasks WHERE status = ? ORDER BY priority DESC, created_at ASC`),
     getRecentDone: db.prepare(`SELECT * FROM tasks WHERE status = 'done' ORDER BY finished_at DESC LIMIT ?`),
     getFailedTasks: db.prepare(`SELECT * FROM tasks WHERE status = 'failed' ORDER BY finished_at DESC`),
+    getRecentFailures: db.prepare(`SELECT * FROM tasks WHERE status = 'failed' ORDER BY finished_at DESC LIMIT ?`),
+    getCompletedTaskCount: db.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE status IN ('done', 'failed')`),
     startTask: db.prepare(`UPDATE tasks SET status = 'running', started_at = ?, assigned_to = ? WHERE id = ?`),
     finishTask: db.prepare(`UPDATE tasks SET status = ?, finished_at = ?, result = ? WHERE id = ?`),
     revertToPending: db.prepare(`UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL WHERE id = ?`),
@@ -35,6 +37,11 @@ function prepareStatements(db: Database.Database) {
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
     `),
     getTaskLogs: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC`),
+    insertImprovement: db.prepare(`
+      INSERT INTO improvements (id, trigger_analysis, target, action, applied_at, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `),
+    getActiveImprovements: db.prepare(`SELECT * FROM improvements WHERE status = 'active' ORDER BY applied_at DESC`),
   }
 }
 
@@ -183,6 +190,33 @@ export function appendLog(taskId: string, agent: string, message: string): void 
 export function getTaskLogs(taskId: string): TaskLog[] {
   getDb()
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
+}
+
+export function getCompletedTaskCount(): number {
+  getDb()
+  const row = stmts.getCompletedTaskCount.get() as { count: number }
+  return row.count
+}
+
+export function getRecentFailures(limit = 10): Task[] {
+  getDb()
+  return stmts.getRecentFailures.all(limit) as Task[]
+}
+
+export function insertImprovement(
+  id: string,
+  triggerAnalysis: string,
+  target: string,
+  action: string,
+): void {
+  const now = new Date().toISOString()
+  getDb()
+  stmts.insertImprovement.run(id, triggerAnalysis, target, action, now, "active")
+}
+
+export function getActiveImprovements(): Improvement[] {
+  getDb()
+  return stmts.getActiveImprovements.all() as Improvement[]
 }
 
 export function getCostStats() {

@@ -10,6 +10,8 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { runWhyWhyAnalysis } from "./whywhy.js"
+import { getCompletedTaskCount } from "./db.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -33,6 +35,7 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+let lastWhyWhyCheckpoint = 0
 
 export function stopScheduler(): void {
   alive = false
@@ -267,7 +270,22 @@ export async function startScheduler(): Promise<void> {
     // 3. Execute the task
     await executeTask(task)
 
-    // 4. Brief pause between tasks to avoid hammering
+    // 4. WhyWhy分析: 完了タスク10件ごとにトリガー
+    const completedCount = getCompletedTaskCount()
+    const checkpoint = Math.floor(completedCount / 10)
+    if (checkpoint > lastWhyWhyCheckpoint) {
+      lastWhyWhyCheckpoint = checkpoint
+      console.log(`[scheduler] completed tasks reached ${completedCount}, running WhyWhy analysis`)
+      try {
+        await runWhyWhyAnalysis()
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[scheduler] WhyWhy analysis failed: ${msg}`)
+        appendLog("scheduler", "system", `[whywhy] analysis failed: ${msg}`)
+      }
+    }
+
+    // 5. Brief pause between tasks to avoid hammering
     await sleep(1000)
   }
 
