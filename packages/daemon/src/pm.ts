@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Task, Memory, PmOutput } from "@devpane/shared"
+import { PmOutputSchema } from "@devpane/shared/schemas"
 import { config } from "./config.js"
 import { getRecentDone, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
 import { recall } from "./memory.js"
@@ -162,9 +163,15 @@ export function parsePmOutput(stdout: string): PmOutput {
   if (!match) throw new Error(`PM output does not contain valid JSON: ${text.slice(0, 200)}`)
 
   const parsed = JSON.parse(match[0])
-  if (!Array.isArray(parsed.tasks)) throw new Error("PM output missing tasks array")
 
-  return parsed as PmOutput
+  // Contract: Zodスキーマでバリデーション（原理3）
+  const result = PmOutputSchema.safeParse(parsed)
+  if (!result.success) {
+    const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+    throw new Error(`PM output validation failed: ${issues}`)
+  }
+
+  return result.data as PmOutput
 }
 
 export async function runPm(): Promise<PmOutput> {

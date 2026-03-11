@@ -63,6 +63,21 @@ const facts = computed(() => {
         </details>
       </section>
 
+      <section v-if="facts?.gate3" class="gate3">
+        <h2>Gate 3 Result</h2>
+        <div class="gate3-verdict" :class="`verdict-${facts.gate3.verdict}`">
+          {{ facts.gate3.verdict.toUpperCase() }}
+        </div>
+        <ul class="gate3-reasons">
+          <li v-for="(r, i) in facts.gate3.reasons" :key="i">{{ r }}</li>
+        </ul>
+        <div v-if="facts.gate3.failure" class="gate3-failure">
+          <span class="failure-label">root cause:</span> {{ facts.gate3.failure.root_cause }}
+          <span class="failure-label">stage:</span> {{ facts.gate3.failure.stage }}
+          <span class="failure-label">severity:</span> {{ facts.gate3.failure.severity }}
+        </div>
+      </section>
+
       <section class="logs">
         <h2>Logs ({{ logs.length }})</h2>
         <div class="log-stream">
@@ -200,5 +215,40 @@ details ul {
   color: #8b949e;
   text-align: center;
   padding: 2rem 0;
+}
+
+.gate3 { margin-top: 1rem; }
+
+.gate3-verdict {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.verdict-go { background: #238636; color: #f0f6fc; }
+.verdict-recycle { background: #d29922; color: #0d1117; }
+.verdict-kill { background: #f85149; color: #f0f6fc; }
+
+.gate3-reasons {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  font-size: 0.8rem;
+}
+
+.gate3-failure {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  padding: 0.5rem;
+  background: #161b22;
+  border-radius: 4px;
+  border-left: 3px solid #f85149;
+}
+
+.failure-label {
+  color: #8b949e;
+  margin-right: 0.25rem;
 }
 </style>

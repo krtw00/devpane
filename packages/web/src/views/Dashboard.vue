@@ -166,6 +166,7 @@ function timeAgo(iso: string | null): string {
         <nav class="nav-links">
           <router-link to="/" class="active">Dashboard</router-link>
           <router-link to="/cost">Cost</router-link>
+          <router-link to="/events">Events</router-link>
         </nav>
         <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
           <span class="conn-dot" />

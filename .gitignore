@@ -5,6 +5,8 @@ dist/
 !.env.example
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.log
 .worktrees/
 .vite/

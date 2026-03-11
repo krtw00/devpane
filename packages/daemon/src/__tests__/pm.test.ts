@@ -49,7 +49,7 @@ describe("parsePmOutput", () => {
   })
 
   it("throws on output without tasks array", () => {
-    expect(() => parsePmOutput('{"reasoning": "no tasks"}')).toThrow("missing tasks array")
+    expect(() => parsePmOutput('{"reasoning": "no tasks"}')).toThrow("PM output validation failed")
   })
 
   it("handles claude CLI json with nested result containing JSON", () => {

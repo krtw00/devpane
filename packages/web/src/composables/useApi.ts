@@ -70,6 +70,18 @@ export async function fetchCostStats(): Promise<CostStats> {
   return fetchJson<CostStats>('/stats/cost')
 }
 
+export type AgentEvent = {
+  type: string
+  taskId?: string
+  [key: string]: unknown
+}
+
+export async function fetchEvents(limit = 100, type?: string): Promise<AgentEvent[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (type) params.set('type', type)
+  return fetchJson<AgentEvent[]>(`/events?${params}`)
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])
