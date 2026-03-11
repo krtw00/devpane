@@ -1,24 +1,44 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
-import { useTasks, useHealth, type Task } from '../composables/useApi'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { useTasks, type Task } from '../composables/useApi'
+import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
 const { tasks, loading, refresh } = useTasks()
-const { connected, refresh: refreshHealth } = useHealth()
+const { connected } = useSocket()
 
-let taskTimer: ReturnType<typeof setInterval>
-let healthTimer: ReturnType<typeof setInterval>
+const chatInput = ref('')
+const sending = ref(false)
+const chatLog = ref<{ from: string; text: string; time: string }[]>([])
+const chatEl = ref<HTMLElement | null>(null)
+
+let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  refreshHealth()
-  taskTimer = setInterval(refresh, 5000)
-  healthTimer = setInterval(refreshHealth, 30000)
+  timer = setInterval(refresh, 10000) // slower poll, WS handles live updates
 })
 
-onUnmounted(() => {
-  clearInterval(taskTimer)
-  clearInterval(healthTimer)
+onUnmounted(() => clearInterval(timer))
+
+onWsEvent('task:created', () => refresh())
+onWsEvent('task:updated', () => refresh())
+onWsEvent('chat', (payload) => {
+  const p = payload as { message: string; created_at: string }
+  chatLog.value.push({ from: 'you', text: p.message, time: p.created_at })
+  nextTick(() => chatEl.value?.scrollTo(0, chatEl.value.scrollHeight))
 })
+
+async function send() {
+  const msg = chatInput.value.trim()
+  if (!msg || sending.value) return
+  sending.value = true
+  chatInput.value = ''
+  try {
+    await sendChat(msg)
+  } finally {
+    sending.value = false
+  }
+}
 
 const statusOrder: Record<string, number> = { running: 0, pending: 1, failed: 2, done: 3 }
 
@@ -55,10 +75,13 @@ function timeAgo(iso: string | null): string {
           <h1>DevPane</h1>
           <span class="subtitle">the office window</span>
         </div>
-        <div class="daemon-status">
-          <span class="status-dot" :class="connected ? 'dot-ok' : 'dot-err'" />
-          <span class="status-text">{{ connected ? 'connected' : 'disconnected' }}</span>
+        <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
+          <span class="conn-dot" />
+          {{ connected ? 'connected' : 'disconnected' }}
         </div>
+      </div>
+      <div v-if="!connected" class="conn-banner">
+        daemon connection lost — reconnecting...
       </div>
     </header>
 
@@ -102,6 +125,26 @@ function timeAgo(iso: string | null): string {
     <div v-if="!loading && tasks.length === 0" class="empty">
       no tasks yet — waiting for PM to generate...
     </div>
+
+    <section class="chat-section">
+      <h2>Chat <span class="ws-dot" :class="{ on: connected }"></span></h2>
+      <div ref="chatEl" class="chat-log">
+        <div v-for="(msg, i) in chatLog" :key="i" class="chat-msg">
+          <span class="chat-from">[{{ msg.from }}]</span>
+          <span>{{ msg.text }}</span>
+        </div>
+        <div v-if="chatLog.length === 0" class="chat-empty">send a message to create a task</div>
+      </div>
+      <form class="chat-form" @submit.prevent="send">
+        <input
+          v-model="chatInput"
+          class="chat-input"
+          placeholder="tell the team what to do..."
+          :disabled="sending"
+        />
+        <button class="chat-btn" type="submit" :disabled="sending || !chatInput.trim()">send</button>
+      </form>
+    </section>
   </div>
 </template>
 
@@ -118,12 +161,6 @@ header {
   margin-bottom: 2rem;
 }
 
-.header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 h1 {
   font-size: 1.5rem;
   margin: 0;
@@ -135,32 +172,52 @@ h1 {
   font-size: 0.85rem;
 }
 
-.daemon-status {
+.header-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
 }
 
-.status-dot {
-  width: 10px;
-  height: 10px;
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.conn-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: inline-block;
 }
 
-.dot-ok {
+.conn-ok .conn-dot {
   background: #3fb950;
   box-shadow: 0 0 6px #3fb95080;
 }
 
-.dot-err {
+.conn-ok {
+  color: #3fb950;
+}
+
+.conn-err .conn-dot {
   background: #f85149;
   box-shadow: 0 0 6px #f8514980;
 }
 
-.status-text {
-  font-size: 0.75rem;
-  color: #8b949e;
+.conn-err {
+  color: #f85149;
+}
+
+.conn-banner {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: #f8514920;
+  border: 1px solid #f8514960;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #f85149;
 }
 
 .stats {
@@ -249,5 +306,93 @@ h1 {
   text-align: center;
   color: #8b949e;
   padding: 3rem 0;
+}
+
+.chat-section {
+  margin-top: 2rem;
+  border-top: 1px solid #30363d;
+  padding-top: 1.5rem;
+}
+
+.chat-section h2 {
+  font-size: 0.95rem;
+  color: #f0f6fc;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f85149;
+  display: inline-block;
+}
+
+.ws-dot.on {
+  background: #3fb950;
+}
+
+.chat-log {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.75rem;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-msg {
+  line-height: 1.6;
+}
+
+.chat-from {
+  color: #58a6ff;
+  margin-right: 0.5rem;
+}
+
+.chat-empty {
+  color: #484f58;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-input {
+  flex: 1;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: #c9d1d9;
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.chat-input:focus {
+  border-color: #58a6ff;
+}
+
+.chat-btn {
+  background: #238636;
+  color: #f0f6fc;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

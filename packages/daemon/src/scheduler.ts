@@ -1,10 +1,11 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, startTask, finishTask, revertToPending, appendLog } from "./db.js"
-import { createWorktree, removeWorktree } from "./worktree.js"
+import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog } from "./db.js"
+import { createWorktree, removeWorktree, mergeToMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
+import { broadcast } from "./ws.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -28,19 +29,9 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
-let lastPmRunAt: string | null = null
 
 export function stopScheduler(): void {
   alive = false
-}
-
-export function getSchedulerState() {
-  return {
-    alive,
-    pmConsecutiveFailures,
-    rateLimitHits,
-    lastPmRunAt,
-  }
 }
 
 function getRateLimitBackoff(): number {
@@ -67,7 +58,6 @@ async function callPm(): Promise<Task[]> {
   try {
     const output = await runPm()
     pmConsecutiveFailures = 0
-    lastPmRunAt = new Date().toISOString()
     clearRateLimit()
     return ingestPmTasks(output)
   } catch (err) {
@@ -97,6 +87,7 @@ async function executeTask(task: Task): Promise<void> {
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
   startTask(task.id, workerId)
+  broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
   let worktreePath: string
   try {
@@ -105,6 +96,7 @@ async function executeTask(task: Task): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[scheduler] worktree creation failed: ${msg}`)
     finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
+    broadcast("task:updated", { id: task.id, status: "failed" })
     return
   }
 
@@ -114,15 +106,29 @@ async function executeTask(task: Task): Promise<void> {
     const status = result.exit_code === 0 ? "done" as const : "failed" as const
 
     finishTask(task.id, status, JSON.stringify(facts))
+    broadcast("task:updated", { id: task.id, status, result: facts })
     console.log(`[scheduler] task ${task.id} ${status}: ${facts.files_changed.length} files changed`)
 
-    if (isRateLimitError(result.stdout)) {
+    console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
+
+    // Merge successful tasks to main
+    if (status === "done" && facts.commit_hash) {
+      try {
+        mergeToMain(task.id, task.title)
+        console.log(`[scheduler] merged task ${task.id} to main`)
+      } catch (mergeErr) {
+        const mergeMsg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr)
+        console.error(`[scheduler] merge failed for ${task.id}: ${mergeMsg}`)
+      }
+    }
+
+    if (isRateLimitError(result.result_text)) {
       await handleRateLimit("Worker")
     } else {
       clearRateLimit()
     }
 
-    // Auto-cleanup worktree for completed tasks
+    // Cleanup worktree after merge
     try {
       removeWorktree(task.id)
       console.log(`[scheduler] cleaned up worktree for task ${task.id}`)
@@ -150,9 +156,21 @@ async function executeTask(task: Task): Promise<void> {
   }
 }
 
+function recoverOrphanTasks(): void {
+  const orphans = getTasksByStatus("running")
+  if (orphans.length === 0) return
+  console.log(`[scheduler] recovering ${orphans.length} orphan running tasks → pending`)
+  for (const t of orphans) {
+    removeWorktree(t.id)
+    revertToPending(t.id)
+    appendLog(t.id, "system", "[recovery] reverted to pending on daemon restart")
+  }
+}
+
 export async function startScheduler(): Promise<void> {
   console.log("[scheduler] starting autonomous loop")
   alive = true
+  recoverOrphanTasks()
 
   while (alive) {
     // 1. Check for pending tasks
@@ -170,6 +188,7 @@ export async function startScheduler(): Promise<void> {
       }
 
       console.log(`[scheduler] PM created ${created.length} tasks`)
+      for (const t of created) broadcast("task:created", t)
       task = getNextPending()
       if (!task) continue
     }

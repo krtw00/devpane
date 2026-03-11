@@ -47,32 +47,6 @@ export function useTasks() {
   return { tasks, loading, refresh }
 }
 
-export type HealthStatus = {
-  status: string
-  uptime: number
-  schedulerRunning: boolean
-  activeWorkers: number
-  dbSize: number | null
-  lastPmRun: string | null
-}
-
-export function useHealth() {
-  const health = ref<HealthStatus | null>(null)
-  const connected = ref(false)
-
-  async function refresh() {
-    try {
-      health.value = await fetchJson<HealthStatus>('/health')
-      connected.value = true
-    } catch {
-      health.value = null
-      connected.value = false
-    }
-  }
-
-  return { health, connected, refresh }
-}
-
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])

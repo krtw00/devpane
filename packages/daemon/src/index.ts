@@ -3,36 +3,40 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { config } from "./config.js"
 import { tasksApi } from "./api/tasks.js"
-import { healthApi } from "./api/health.js"
+import { chatApi } from "./api/chat.js"
+import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
+import { killAllWorkers } from "./worker.js"
+import { killAllPm } from "./pm.js"
 
 const app = new Hono()
 
 app.use("*", cors())
-app.route("/health", healthApi)
+app.get("/health", (c) => c.json({ status: "ok" }))
 app.route("/tasks", tasksApi)
+app.route("/chat", chatApi)
 
 console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
 console.log(`[devpane] project root: ${config.PROJECT_ROOT}`)
 
-serve({ fetch: app.fetch, port: config.API_PORT }, () => {
+const server = serve({ fetch: app.fetch, port: config.API_PORT }, () => {
   console.log(`[devpane] daemon listening on http://localhost:${config.API_PORT}`)
-  // Start the autonomous loop after server is ready
   startScheduler().catch((err) => {
     console.error("[devpane] scheduler crashed:", err)
     process.exit(1)
   })
 })
 
-// Graceful shutdown
-process.on("SIGINT", () => {
-  console.log("[devpane] shutting down...")
-  stopScheduler()
-  process.exit(0)
-})
+attachWebSocket(server)
 
-process.on("SIGTERM", () => {
+// Graceful shutdown
+function shutdown() {
   console.log("[devpane] shutting down...")
   stopScheduler()
+  killAllWorkers()
+  killAllPm()
   process.exit(0)
-})
+}
+
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)

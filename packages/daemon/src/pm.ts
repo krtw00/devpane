@@ -1,23 +1,39 @@
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getRecentDone, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
 
+const activeProcs = new Set<ChildProcess>()
+
+export function killAllPm(): void {
+  for (const proc of activeProcs) {
+    proc.kill("SIGTERM")
+  }
+  activeProcs.clear()
+}
+
 function spawnClaude(args: string[], cwd: string, stdin: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const proc = spawn("claude", args, { cwd, env })
+    const proc = spawn("claude", args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] })
+    activeProcs.add(proc)
 
     let stdout = ""
     let stderr = ""
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
 
+    const timeout = setTimeout(() => {
+      proc.kill("SIGTERM")
+    }, config.PM_TIMEOUT_MS)
+
     proc.on("close", (code, signal) => {
+      activeProcs.delete(proc)
+      clearTimeout(timeout)
       if (signal) {
         reject(new Error(`claude killed by signal ${signal} (timeout?). stderr: ${stderr.slice(0, 500)}`))
       } else if (code !== 0) {
@@ -27,7 +43,11 @@ function spawnClaude(args: string[], cwd: string, stdin: string): Promise<string
         resolve(stdout)
       }
     })
-    proc.on("error", reject)
+    proc.on("error", (err) => {
+      activeProcs.delete(proc)
+      clearTimeout(timeout)
+      reject(err)
+    })
 
     if (stdin) {
       proc.stdin.write(stdin)
