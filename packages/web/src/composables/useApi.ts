@@ -70,6 +70,18 @@ export async function fetchCostStats(): Promise<CostStats> {
   return fetchJson<CostStats>('/stats/cost')
 }
 
+export type PipelineStats = {
+  gate3_pass_rate: number
+  avg_execution_time: number
+  consecutive_failures: number
+  tasks_today: number
+  active_improvements: number
+}
+
+export async function fetchPipelineStats(): Promise<PipelineStats> {
+  return fetchJson<PipelineStats>('/stats/pipeline')
+}
+
 export type AgentEvent = {
   type: string
   taskId?: string
