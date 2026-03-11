@@ -57,6 +57,19 @@ export async function createTask(data: { title: string; description: string; pri
   return res.json()
 }
 
+export type CostStats = {
+  total_cost: number
+  total_tasks: number
+  avg_cost: number
+  cost_24h: number
+  cost_7d: number
+  daily: { date: string; cost: number; tasks: number }[]
+}
+
+export async function fetchCostStats(): Promise<CostStats> {
+  return fetchJson<CostStats>('/stats/cost')
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])

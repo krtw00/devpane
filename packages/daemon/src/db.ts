@@ -165,3 +165,39 @@ export function getTaskLogs(taskId: string): TaskLog[] {
   getDb()
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
 }
+
+export function getCostStats() {
+  const d = getDb()
+
+  const total = d.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) AS total_cost,
+           COUNT(*) AS total_tasks,
+           COALESCE(AVG(cost_usd), 0) AS avg_cost
+    FROM tasks WHERE cost_usd IS NOT NULL
+  `).get() as { total_cost: number; total_tasks: number; avg_cost: number }
+
+  const cost24h = d.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) AS cost
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > datetime('now', '-1 day')
+  `).get() as { cost: number }
+
+  const cost7d = d.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) AS cost
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > datetime('now', '-7 days')
+  `).get() as { cost: number }
+
+  const daily = d.prepare(`
+    SELECT date(finished_at) AS date, SUM(cost_usd) AS cost, COUNT(*) AS tasks
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at IS NOT NULL
+    GROUP BY date(finished_at) ORDER BY date ASC
+  `).all() as { date: string; cost: number; tasks: number }[]
+
+  return {
+    total_cost: total.total_cost,
+    total_tasks: total.total_tasks,
+    avg_cost: total.avg_cost,
+    cost_24h: cost24h.cost,
+    cost_7d: cost7d.cost,
+    daily,
+  }
+}
