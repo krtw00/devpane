@@ -44,6 +44,22 @@ export const StructuredFailureSchema = z.object({
   severity: z.enum(["transient", "process_gap", "critical"]),
 })
 
+// --- Gate 2 Output (テストカバレッジ照合) ---
+
+export const Gate2VerdictSchema = z.enum(["go", "recycle"])
+
+export const Gate2CoverageSchema = z.object({
+  invariants: z.number().min(0).max(100),
+  endpoints: z.number().min(0).max(100),
+  constraints: z.number().min(0).max(100),
+})
+
+export const Gate2OutputSchema = z.object({
+  verdict: Gate2VerdictSchema,
+  reason: z.string(),
+  coverage: Gate2CoverageSchema,
+})
+
 // --- Gate 3 Verdict ---
 
 export const Gate3VerdictSchema = z.enum(["go", "recycle", "kill"])
@@ -102,6 +118,9 @@ export type PmOutputValidated = z.infer<typeof PmOutputSchema>
 export type RootCauseType = z.infer<typeof RootCause>
 export type PipelineStageType = z.infer<typeof PipelineStage>
 export type StructuredFailure = z.infer<typeof StructuredFailureSchema>
+export type Gate2Verdict = z.infer<typeof Gate2VerdictSchema>
+export type Gate2Coverage = z.infer<typeof Gate2CoverageSchema>
+export type Gate2Output = z.infer<typeof Gate2OutputSchema>
 export type Gate3Verdict = z.infer<typeof Gate3VerdictSchema>
 export type ImprovementAction = z.infer<typeof ImprovementActionSchema>
 export type WhyWhyAnalysis = z.infer<typeof WhyWhyAnalysisSchema>
