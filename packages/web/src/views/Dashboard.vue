@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
-import { useTasks, type Task } from '../composables/useApi'
+import { useTasks, createTask, type Task } from '../composables/useApi'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
 const { tasks, loading, refresh } = useTasks()
@@ -37,6 +37,27 @@ async function send() {
     await sendChat(msg)
   } finally {
     sending.value = false
+  }
+}
+
+const showModal = ref(false)
+const taskForm = ref({ title: '', description: '', priority: 50 })
+const submitting = ref(false)
+
+function openModal() {
+  taskForm.value = { title: '', description: '', priority: 50 }
+  showModal.value = true
+}
+
+async function submitTask() {
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await createTask(taskForm.value)
+    showModal.value = false
+    refresh()
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -143,8 +164,37 @@ function timeAgo(iso: string | null): string {
           :disabled="sending"
         />
         <button class="chat-btn" type="submit" :disabled="sending || !chatInput.trim()">send</button>
+        <button class="new-task-btn" type="button" @click="openModal">+ New Task</button>
       </form>
     </section>
+
+    <Teleport to="body">
+      <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+        <div class="modal">
+          <h3>New Task</h3>
+          <form @submit.prevent="submitTask">
+            <label>
+              Title
+              <input v-model="taskForm.title" class="modal-input" required />
+            </label>
+            <label>
+              Description
+              <textarea v-model="taskForm.description" class="modal-input modal-textarea" required rows="4" />
+            </label>
+            <label>
+              Priority
+              <input v-model.number="taskForm.priority" class="modal-input" type="number" min="0" max="100" />
+            </label>
+            <div class="modal-actions">
+              <button type="button" class="modal-cancel" @click="showModal = false">Cancel</button>
+              <button type="submit" class="modal-submit" :disabled="submitting || !taskForm.title.trim() || !taskForm.description.trim()">
+                {{ submitting ? 'Creating...' : 'Create' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -392,6 +442,120 @@ h1 {
 }
 
 .chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.new-task-btn {
+  background: #30363d;
+  color: #c9d1d9;
+  border: 1px solid #484f58;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.new-task-btn:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 1.5rem;
+  width: 420px;
+  max-width: 90vw;
+  color: #c9d1d9;
+}
+
+.modal h3 {
+  margin: 0 0 1rem;
+  color: #f0f6fc;
+  font-size: 1.1rem;
+}
+
+.modal label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: #8b949e;
+}
+
+.modal-input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: #c9d1d9;
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.modal-input:focus {
+  border-color: #58a6ff;
+}
+
+.modal-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.modal-cancel {
+  background: transparent;
+  color: #8b949e;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.modal-cancel:hover {
+  color: #c9d1d9;
+  border-color: #484f58;
+}
+
+.modal-submit {
+  background: #238636;
+  color: #f0f6fc;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.modal-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

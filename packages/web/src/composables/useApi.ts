@@ -47,6 +47,16 @@ export function useTasks() {
   return { tasks, loading, refresh }
 }
 
+export async function createTask(data: { title: string; description: string; priority: number }): Promise<Task> {
+  const res = await fetch(`${BASE}/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])
