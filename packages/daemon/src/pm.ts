@@ -95,7 +95,7 @@ function buildPmPrompt(context: PmContext): string {
   ].join("\n")
 }
 
-function parsePmOutput(stdout: string): PmOutput {
+export function parsePmOutput(stdout: string): PmOutput {
   // claude -p --output-format json returns JSON with a result field
   let text: string
   try {
