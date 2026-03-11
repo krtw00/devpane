@@ -82,6 +82,37 @@ export async function fetchEvents(limit = 100, type?: string): Promise<AgentEven
   return fetchJson<AgentEvent[]>(`/events?${params}`)
 }
 
+export type Memory = {
+  id: string
+  category: 'feature' | 'decision' | 'lesson'
+  content: string
+  source_task_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function fetchMemories(category?: string): Promise<Memory[]> {
+  const params = new URLSearchParams()
+  if (category) params.set('category', category)
+  const qs = params.toString()
+  return fetchJson<Memory[]>(`/memories${qs ? `?${qs}` : ''}`)
+}
+
+export async function createMemory(data: { category: string; content: string }): Promise<Memory> {
+  const res = await fetch(`${BASE}/memories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/memories/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])
