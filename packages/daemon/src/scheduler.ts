@@ -1,6 +1,6 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, startTask, finishTask, appendLog } from "./db.js"
+import { getNextPending, startTask, finishTask, revertToPending, appendLog } from "./db.js"
 import { createWorktree, removeWorktree } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -123,8 +123,7 @@ async function executeTask(task: Task): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
 
     if (isRateLimitError(msg)) {
-      // Revert task to pending so it can be retried after backoff
-      finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: "rate limit" }))
+      revertToPending(task.id)
       await handleRateLimit("Worker")
     } else {
       console.error(`[scheduler] worker error: ${msg}`)

@@ -39,7 +39,7 @@ export function collectFacts(
   // Run lint if available
   let lintResult: ObservableFacts["lint_result"]
   try {
-    const result = execFileSync("pnpm", ["lint", "--if-present"], {
+    const result = execFileSync("pnpm", ["run", "lint", "--if-present"], {
       cwd: worktreePath,
       encoding: "utf-8",
       timeout: 60000,

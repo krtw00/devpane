@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { initDb, closeDb, createTask, getTask, getNextPending, getAllTasks, getTasksByStatus, getRecentDone, getFailedTasks, startTask, finishTask, appendLog, getTaskLogs } from "../db.js"
+import { initDb, closeDb, createTask, getTask, getNextPending, getAllTasks, getTasksByStatus, getRecentDone, getFailedTasks, startTask, finishTask, revertToPending, appendLog, getTaskLogs } from "../db.js"
 
 describe("db", () => {
   beforeEach(() => {
@@ -107,6 +107,22 @@ describe("db", () => {
 
       const failed = getTask(task.id)!
       expect(failed.status).toBe("failed")
+    })
+
+    it("reverts running task to pending", () => {
+      const task = createTask("Retry me", "desc", "pm")
+      startTask(task.id, "worker-0")
+
+      const running = getTask(task.id)!
+      expect(running.status).toBe("running")
+      expect(running.assigned_to).toBe("worker-0")
+
+      revertToPending(task.id)
+
+      const reverted = getTask(task.id)!
+      expect(reverted.status).toBe("pending")
+      expect(reverted.started_at).toBeNull()
+      expect(reverted.assigned_to).toBeNull()
     })
   })
 

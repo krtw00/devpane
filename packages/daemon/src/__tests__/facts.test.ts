@@ -15,7 +15,7 @@ vi.mock("node:child_process", () => ({
     if (cmd === "pnpm" && args[0] === "test") {
       return "Tests: 5 passed, 0 failed"
     }
-    if (cmd === "pnpm" && args[0] === "lint") {
+    if (cmd === "pnpm" && args[0] === "run" && args[1] === "lint") {
       return "Done. 0 errors found."
     }
     return ""

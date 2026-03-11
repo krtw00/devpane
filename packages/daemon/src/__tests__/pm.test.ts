@@ -1,25 +1,5 @@
 import { describe, it, expect } from "vitest"
-
-// parsePmOutput is not exported, so we test it via a local copy of the logic.
-// This validates the parsing logic that's critical for PM → task ingestion.
-
-function parsePmOutput(stdout: string): { tasks: { title: string; description: string; priority: number }[]; reasoning: string } {
-  let text: string
-  try {
-    const json = JSON.parse(stdout)
-    text = json.result ?? stdout
-  } catch {
-    text = stdout
-  }
-
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) throw new Error(`PM output does not contain valid JSON: ${text.slice(0, 200)}`)
-
-  const parsed = JSON.parse(match[0])
-  if (!Array.isArray(parsed.tasks)) throw new Error("PM output missing tasks array")
-
-  return parsed
-}
+import { parsePmOutput } from "../pm.js"
 
 describe("parsePmOutput", () => {
   it("parses direct JSON output", () => {
