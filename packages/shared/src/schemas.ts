@@ -95,8 +95,28 @@ export const AgentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("spc.alert"), metric: z.string(), value: z.number(), ucl: z.number() }),
 ])
 
+// --- Tester Spec (構造化仕様: functions[].invariants) ---
+
+export const FunctionSpecSchema = z.object({
+  name: z.string().min(1),
+  file: z.string().min(1),
+  invariants: z.array(z.string().min(1)).min(1),
+})
+
+export const TesterSpecSchema = z.object({
+  functions: z.array(FunctionSpecSchema).min(1),
+})
+
+export const TesterOutputSchema = z.object({
+  testFiles: z.array(z.string()),
+  testCount: z.number().int().min(0),
+})
+
 // --- Type exports ---
 
+export type FunctionSpec = z.infer<typeof FunctionSpecSchema>
+export type TesterSpec = z.infer<typeof TesterSpecSchema>
+export type TesterOutput = z.infer<typeof TesterOutputSchema>
 export type PmTask = z.infer<typeof PmTaskSchema>
 export type PmOutputValidated = z.infer<typeof PmOutputSchema>
 export type RootCauseType = z.infer<typeof RootCause>

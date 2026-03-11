@@ -9,6 +9,7 @@ import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
+import { runTester, extractTesterSpec } from "./tester.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 
 function sleep(ms: number): Promise<void> {
@@ -113,6 +114,35 @@ async function executeTask(task: Task): Promise<void> {
   }
 
   try {
+    // Gate 1: 構造化仕様の抽出・検証
+    const testerSpec = extractTesterSpec(task.description)
+    if (testerSpec) {
+      emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
+      appendLog(task.id, "system", `[gate1] passed: ${testerSpec.functions.length} functions with invariants`)
+
+      // Tester: テストファイル自動生成
+      try {
+        const testerOutput = await runTester(task, testerSpec, worktreePath)
+        appendLog(task.id, "system", `[tester] generated ${testerOutput.testCount} tests in ${testerOutput.testFiles.length} files`)
+
+        // Gate 2: 生成テストのコンパイル検証
+        const { execFileSync } = await import("node:child_process")
+        try {
+          execFileSync("pnpm", ["build"], { cwd: worktreePath, timeout: 120_000, stdio: "pipe" })
+          emit({ type: "gate.passed", taskId: task.id, gate: "gate2" })
+          appendLog(task.id, "system", "[gate2] passed: generated tests compile")
+        } catch {
+          emit({ type: "gate.rejected", taskId: task.id, gate: "gate2", verdict: "recycle", reason: "generated tests do not compile" })
+          appendLog(task.id, "system", "[gate2] rejected: generated tests do not compile")
+        }
+      } catch (testerErr) {
+        const testerMsg = testerErr instanceof Error ? testerErr.message : String(testerErr)
+        appendLog(task.id, "system", `[tester] failed: ${testerMsg}`)
+        console.warn(`[scheduler] tester failed for task ${task.id}: ${testerMsg}`)
+        // tester失敗はworker実行をブロックしない
+      }
+    }
+
     const startTime = Date.now()
     const result = await runWorker(task, worktreePath)
     const executionMs = Date.now() - startTime

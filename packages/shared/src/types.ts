@@ -92,6 +92,22 @@ export type SpcMetric = {
   recorded_at: string
 }
 
+// Tester Spec — PM構造化仕様のfunctions[].invariants
+export type FunctionSpec = {
+  name: string
+  file: string
+  invariants: string[]
+}
+
+export type TesterSpec = {
+  functions: FunctionSpec[]
+}
+
+export type TesterOutput = {
+  testFiles: string[]
+  testCount: number
+}
+
 // Config
 export type Config = {
   PROJECT_ROOT: string
