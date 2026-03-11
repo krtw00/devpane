@@ -1,10 +1,54 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useTasks, createTask, type Task } from '../composables/useApi'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
+const route = useRoute()
+const router = useRouter()
 const { tasks, loading, refresh } = useTasks()
 const { connected } = useSocket()
+
+type StatusFilter = 'all' | Task['status']
+type CreatorFilter = 'all' | 'pm' | 'human'
+type SortKey = 'priority' | 'created_at' | 'finished_at'
+
+const statusFilters: StatusFilter[] = ['all', 'pending', 'running', 'done', 'failed']
+const creatorFilters: CreatorFilter[] = ['all', 'pm', 'human']
+const sortOptions: { key: SortKey; label: string }[] = [
+  { key: 'priority', label: 'priority' },
+  { key: 'created_at', label: 'created' },
+  { key: 'finished_at', label: 'finished' },
+]
+
+function readQuery() {
+  const q = route.query
+  const s = statusFilters.includes(q.status as StatusFilter) ? (q.status as StatusFilter) : 'all'
+  const c = creatorFilters.includes(q.creator as CreatorFilter) ? (q.creator as CreatorFilter) : 'all'
+  const validSorts = sortOptions.map(o => o.key) as string[]
+  const sort = validSorts.includes(q.sort as string) ? (q.sort as SortKey) : 'priority'
+  return { status: s, creator: c, sort }
+}
+
+const statusFilter = ref<StatusFilter>(readQuery().status)
+const creatorFilter = ref<CreatorFilter>(readQuery().creator)
+const sortKey = ref<SortKey>(readQuery().sort)
+
+function syncQuery() {
+  const query: Record<string, string> = {}
+  if (statusFilter.value !== 'all') query.status = statusFilter.value
+  if (creatorFilter.value !== 'all') query.creator = creatorFilter.value
+  if (sortKey.value !== 'priority') query.sort = sortKey.value
+  router.replace({ query })
+}
+
+watch([statusFilter, creatorFilter, sortKey], syncQuery)
+watch(() => route.query, () => {
+  const q = readQuery()
+  statusFilter.value = q.status
+  creatorFilter.value = q.creator
+  sortKey.value = q.sort
+})
 
 const chatInput = ref('')
 const sending = ref(false)
@@ -15,7 +59,7 @@ let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 10000) // slower poll, WS handles live updates
+  timer = setInterval(refresh, 10000)
 })
 
 onUnmounted(() => clearInterval(timer))
@@ -61,11 +105,34 @@ async function submitTask() {
   }
 }
 
-const statusOrder: Record<string, number> = { running: 0, pending: 1, failed: 2, done: 3 }
+const filtered = computed(() => {
+  let list = tasks.value
+  if (statusFilter.value !== 'all') {
+    list = list.filter(t => t.status === statusFilter.value)
+  }
+  if (creatorFilter.value !== 'all') {
+    list = list.filter(t => t.created_by === creatorFilter.value)
+  }
 
-const sorted = computed(() =>
-  [...tasks.value].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9))
-)
+  const sorted = [...list]
+  switch (sortKey.value) {
+    case 'priority':
+      sorted.sort((a, b) => b.priority - a.priority)
+      break
+    case 'created_at':
+      sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      break
+    case 'finished_at':
+      sorted.sort((a, b) => {
+        if (!a.finished_at && !b.finished_at) return 0
+        if (!a.finished_at) return 1
+        if (!b.finished_at) return -1
+        return new Date(b.finished_at).getTime() - new Date(a.finished_at).getTime()
+      })
+      break
+  }
+  return sorted
+})
 
 const counts = computed(() => {
   const c = { pending: 0, running: 0, done: 0, failed: 0 }
@@ -129,10 +196,46 @@ function timeAgo(iso: string | null): string {
       </div>
     </div>
 
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">status</span>
+        <div class="btn-group">
+          <button
+            v-for="s in statusFilters"
+            :key="s"
+            :class="['filter-btn', { active: statusFilter === s }]"
+            @click="statusFilter = s"
+          >{{ s }}{{ s !== 'all' && counts[s] !== undefined ? ` (${counts[s]})` : '' }}</button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">creator</span>
+        <div class="btn-group">
+          <button
+            v-for="c in creatorFilters"
+            :key="c"
+            :class="['filter-btn', { active: creatorFilter === c }]"
+            @click="creatorFilter = c"
+          >{{ c }}</button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">sort</span>
+        <div class="btn-group">
+          <button
+            v-for="opt in sortOptions"
+            :key="opt.key"
+            :class="['filter-btn', { active: sortKey === opt.key }]"
+            @click="sortKey = opt.key"
+          >{{ opt.label }}</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading && tasks.length === 0" class="loading">loading...</div>
 
     <ul class="task-list">
-      <li v-for="task in sorted" :key="task.id" :class="['task-item', `status-${task.status}`]">
+      <li v-for="task in filtered" :key="task.id" :class="['task-item', `status-${task.status}`]">
         <router-link :to="`/tasks/${task.id}`">
           <span class="task-icon">{{ statusIcon(task.status) }}</span>
           <div class="task-info">
@@ -318,6 +421,67 @@ h1 {
   font-size: 0.75rem;
   color: #8b949e;
   text-transform: uppercase;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  align-items: center;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.filter-label {
+  font-size: 0.7rem;
+  color: #484f58;
+  text-transform: uppercase;
+}
+
+.btn-group {
+  display: flex;
+}
+
+.filter-btn {
+  background: #161b22;
+  color: #8b949e;
+  border: 1px solid #30363d;
+  padding: 0.25rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filter-btn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.filter-btn:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.filter-btn:not(:first-child) {
+  border-left: none;
+}
+
+.filter-btn:hover {
+  color: #c9d1d9;
+}
+
+.filter-btn.active {
+  background: #30363d;
+  color: #58a6ff;
+  border-color: #58a6ff;
+}
+
+.filter-btn.active + .filter-btn {
+  border-left: 1px solid #30363d;
 }
 
 .task-list {
