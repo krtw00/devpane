@@ -27,8 +27,18 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
     const env = { ...process.env }
     delete env.CLAUDECODE
 
+    const fullPrompt = [
+      task.description,
+      "",
+      "## 品質要件（必須）",
+      "- 実装後に `pnpm build` が通ること（型エラーなし）",
+      "- `pnpm test` が通ること（既存テストを壊さない）",
+      "- lint警告を残さないこと（未使用import、未使用変数など）",
+      "- 新規ファイルは既存コードのスタイルに従うこと",
+    ].join("\n")
+
     const proc = spawn("claude", [
-      "-p", task.description,
+      "-p", fullPrompt,
       "--output-format", "stream-json",
       "--verbose",
       "--max-turns", "30",
