@@ -10,6 +10,9 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { analyzeFailures } from "./whywhy.js"
+import { measureEffect } from "./effect-measure.js"
+import { insertImprovement, getActiveImprovements, updateImprovementVerdict } from "./db.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -33,6 +36,11 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+export let completedCount = 0
+let completedSinceLastAnalysis = 0
+
+const ANALYSIS_INTERVAL = Number(process.env.ANALYSIS_INTERVAL ?? "10")
+const EFFECT_MEASURE_WINDOW = Number(process.env.EFFECT_MEASURE_WINDOW ?? "10")
 
 export function stopScheduler(): void {
   alive = false
@@ -151,6 +159,7 @@ async function executeTask(task: Task): Promise<void> {
       emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
       broadcast("task:updated", { id: task.id, status: "done", result: facts })
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
+      onTaskCompleted()
 
       // PR作成
       if (facts.commit_hash) {
@@ -223,6 +232,49 @@ async function executeTask(task: Task): Promise<void> {
     } catch {
       // ignore cleanup errors on failure path
     }
+  }
+}
+
+function runWhyWhyAnalysis(): void {
+  const result = analyzeFailures()
+  if (!result) return
+
+  console.log(`[scheduler] whywhy analysis: top_failure=${result.analysis.top_failure} (${result.analysis.frequency})`)
+
+  for (const imp of result.improvements) {
+    const id = `imp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    insertImprovement(id, JSON.stringify(result.analysis), imp.target, JSON.stringify(imp))
+    emit({ type: "improvement.applied", improvementId: id, target: imp.target })
+    appendLog("scheduler", "system", `[whywhy] improvement recorded: ${imp.description}`)
+    console.log(`[scheduler] improvement ${id}: ${imp.description}`)
+  }
+}
+
+function runEffectMeasurement(): void {
+  const actives = getActiveImprovements()
+  for (const imp of actives) {
+    const result = measureEffect(imp.id, imp.applied_at, EFFECT_MEASURE_WINDOW)
+    if (!result) continue
+
+    const newStatus = result.verdict === "harmful" ? "reverted" : imp.status
+    updateImprovementVerdict(imp.id, result.verdict, JSON.stringify(result.after), newStatus)
+    console.log(`[scheduler] effect measure ${imp.id}: ${result.verdict} (fail rate ${result.before.failRate.toFixed(2)} → ${result.after.failRate.toFixed(2)})`)
+    appendLog("scheduler", "system", `[effect] ${imp.id}: ${result.verdict}`)
+
+    if (result.verdict === "harmful") {
+      emit({ type: "improvement.reverted", improvementId: imp.id, reason: `fail rate increased: ${result.before.failRate.toFixed(2)} → ${result.after.failRate.toFixed(2)}` })
+    }
+  }
+}
+
+function onTaskCompleted(): void {
+  completedCount++
+  completedSinceLastAnalysis++
+
+  if (completedSinceLastAnalysis >= ANALYSIS_INTERVAL) {
+    completedSinceLastAnalysis = 0
+    runWhyWhyAnalysis()
+    runEffectMeasurement()
   }
 }
 
