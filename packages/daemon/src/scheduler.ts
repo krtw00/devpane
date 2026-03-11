@@ -15,6 +15,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function parseConstraints(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.filter((s): s is string => typeof s === "string")
+  } catch { /* ignore malformed JSON */ }
+  return []
+}
+
 const RATE_LIMIT_PATTERNS = [
   /rate.?limit/i,
   /too many requests/i,
@@ -168,8 +177,16 @@ async function executeTask(task: Task): Promise<void> {
             const existing = findSimilar("feature", file)
             for (const m of existing) forget(m.id)
           }
-          if (added.length > 0 || deleted.length > 0) {
-            console.log(`[scheduler] memory: +${added.length} features, -${deleted.length} forgotten`)
+
+          // 構造化仕様のconstraints → decision記憶
+          const constraints = parseConstraints(task.constraints)
+          for (const c of constraints) {
+            remember("decision", c, task.id)
+          }
+
+          const memoryCount = added.length + constraints.length
+          if (memoryCount > 0 || deleted.length > 0) {
+            console.log(`[scheduler] memory: +${added.length} features, +${constraints.length} decisions, -${deleted.length} forgotten`)
           }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)

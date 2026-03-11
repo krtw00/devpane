@@ -14,8 +14,8 @@ let stmts: ReturnType<typeof prepareStatements>
 function prepareStatements(db: Database.Database) {
   return {
     createTask: db.prepare(`
-      INSERT INTO tasks (id, title, description, status, priority, parent_id, created_by, created_at)
-      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+      INSERT INTO tasks (id, title, description, constraints, status, priority, parent_id, created_by, created_at)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
     `),
     getNextPending: db.prepare(`
       SELECT * FROM tasks WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1
@@ -102,11 +102,13 @@ export function createTask(
   createdBy: TaskCreator,
   priority = 0,
   parentId: string | null = null,
+  constraints: string[] | null = null,
 ): Task {
   const id = ulid()
   const now = new Date().toISOString()
+  const constraintsJson = constraints ? JSON.stringify(constraints) : null
   getDb()
-  stmts.createTask.run(id, title, description, priority, parentId, createdBy, now)
+  stmts.createTask.run(id, title, description, constraintsJson, priority, parentId, createdBy, now)
   return stmts.getTask.get(id) as Task
 }
 
