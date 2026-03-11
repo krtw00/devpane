@@ -5,8 +5,9 @@ import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDel
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
+import { runGate1, emitGate1Events, filterApproved } from "./gate1.js"
 import { broadcast } from "./ws.js"
-import { remember, forget, findSimilar } from "./memory.js"
+import { recall, remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
@@ -64,7 +65,22 @@ async function callPm(): Promise<Task[]> {
     const output = await runPm()
     pmConsecutiveFailures = 0
     clearRateLimit()
-    const tasks = ingestPmTasks(output)
+
+    // Gate 1: 方針チェック（Go のタスクだけ ingest）
+    const gate1Results = runGate1(output.tasks, recall(), "")
+    emitGate1Events(gate1Results)
+    const approved = filterApproved(gate1Results)
+    const rejected = gate1Results.filter(r => r.verdict !== "go")
+    for (const r of rejected) {
+      console.log(`[scheduler] Gate 1 ${r.verdict.toUpperCase()} "${r.task.title}": ${r.reasons.join("; ")}`)
+    }
+
+    if (approved.length === 0) {
+      console.log("[scheduler] Gate 1 rejected all PM tasks")
+      return []
+    }
+
+    const tasks = ingestPmTasks({ tasks: approved, reasoning: output.reasoning })
     for (const t of tasks) {
       emit({ type: "task.created", taskId: t.id, by: "pm" })
     }
