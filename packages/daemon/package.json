@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/index.ts",
     "start": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsc && cp -r src/migrations dist/",
     "test": "vitest run"
   },
   "dependencies": {
