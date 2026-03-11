@@ -93,6 +93,8 @@ export const AgentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("improvement.reverted"), improvementId: z.string(), reason: z.string() }),
   z.object({ type: z.literal("pr.created"), taskId: z.string(), url: z.string() }),
   z.object({ type: z.literal("spc.alert"), metric: z.string(), value: z.number(), ucl: z.number() }),
+  z.object({ type: z.literal("flow.wip_limited"), running: z.number(), limit: z.number() }),
+  z.object({ type: z.literal("flow.jidoka_stop"), consecutiveFailures: z.number(), threshold: z.number() }),
 ])
 
 // --- Type exports ---

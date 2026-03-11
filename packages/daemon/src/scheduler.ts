@@ -1,6 +1,6 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
+import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, getTask } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -10,6 +10,7 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { checkWipLimit, checkJidoka, getRunningCount, WIP_LIMIT, JIDOKA_THRESHOLD } from "./flow-control.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -243,7 +244,26 @@ export async function startScheduler(): Promise<void> {
   pruneWorktrees()
   recoverOrphanTasks()
 
+  let consecutiveFailures = 0
+
   while (alive) {
+    // 0a. WIP制限チェック
+    if (checkWipLimit()) {
+      const running = getRunningCount()
+      console.log(`[scheduler] WIP limit reached (${running}/${WIP_LIMIT}), sleeping ${config.IDLE_INTERVAL_SEC}s`)
+      emit({ type: "flow.wip_limited", running, limit: WIP_LIMIT })
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      continue
+    }
+
+    // 0b. ジドウカ（自働化）チェック — 連続失敗で自動停止
+    if (checkJidoka(consecutiveFailures)) {
+      console.error(`[scheduler] JIDOKA: ${consecutiveFailures} consecutive failures (threshold: ${JIDOKA_THRESHOLD}), stopping`)
+      emit({ type: "flow.jidoka_stop", consecutiveFailures, threshold: JIDOKA_THRESHOLD })
+      alive = false
+      break
+    }
+
     // 1. Check for pending tasks
     let task = getNextPending()
 
@@ -265,9 +285,18 @@ export async function startScheduler(): Promise<void> {
     }
 
     // 3. Execute the task
+    const taskId = task.id
     await executeTask(task)
 
-    // 4. Brief pause between tasks to avoid hammering
+    // 4. Track consecutive failures for jidoka
+    const finished = getTask(taskId)
+    if (finished?.status === "failed") {
+      consecutiveFailures++
+    } else {
+      consecutiveFailures = 0
+    }
+
+    // 5. Brief pause between tasks to avoid hammering
     await sleep(1000)
   }
 
