@@ -5,8 +5,6 @@ import { config } from "./config.js"
 import { tasksApi } from "./api/tasks.js"
 import { chatApi } from "./api/chat.js"
 import { statsApi } from "./api/stats.js"
-import { schedulerApi } from "./api/scheduler.js"
-import { memoriesApi } from "./api/memories.js"
 import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 import { killAllWorkers } from "./worker.js"
@@ -19,8 +17,6 @@ app.get("/health", (c) => c.json({ status: "ok" }))
 app.route("/tasks", tasksApi)
 app.route("/chat", chatApi)
 app.route("/stats", statsApi)
-app.route("/scheduler", schedulerApi)
-app.route("/memories", memoriesApi)
 
 console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
 console.log(`[devpane] project root: ${config.PROJECT_ROOT}`)

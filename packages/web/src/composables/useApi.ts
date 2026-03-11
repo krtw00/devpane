@@ -70,57 +70,6 @@ export async function fetchCostStats(): Promise<CostStats> {
   return fetchJson<CostStats>('/stats/cost')
 }
 
-export type SchedulerStatus = {
-  state: 'running' | 'paused'
-  current_task_id: string | null
-  current_task_title: string | null
-  uptime_sec: number
-  rate_limit_hits: number
-  started_at: string
-}
-
-export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
-  return fetchJson<SchedulerStatus>('/scheduler/status')
-}
-
-export async function pauseScheduler(): Promise<void> {
-  const res = await fetch(`${BASE}/scheduler/pause`, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-}
-
-export async function resumeScheduler(): Promise<void> {
-  const res = await fetch(`${BASE}/scheduler/resume`, { method: 'POST' })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-}
-
-export type Memory = {
-  id: string
-  category: 'feature' | 'decision' | 'lesson'
-  content: string
-  source_task_id: string | null
-  created_at: string
-  updated_at: string
-}
-
-export async function fetchMemories(category?: string): Promise<Memory[]> {
-  const q = category ? `?category=${category}` : ''
-  return fetchJson<Memory[]>(`/memories${q}`)
-}
-
-export async function deleteMemory(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/memories/${id}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-}
-
-export async function updateMemory(id: string, content: string): Promise<void> {
-  const res = await fetch(`${BASE}/memories/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-}
-
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])

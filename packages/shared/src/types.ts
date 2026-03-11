@@ -67,18 +67,6 @@ export type Memory = {
   updated_at: string // ISO 8601
 }
 
-// Scheduler status
-export type SchedulerState = "running" | "paused"
-
-export type SchedulerStatus = {
-  state: SchedulerState
-  current_task_id: string | null
-  current_task_title: string | null
-  uptime_sec: number
-  rate_limit_hits: number
-  started_at: string // ISO 8601
-}
-
 // Config
 export type Config = {
   PROJECT_ROOT: string

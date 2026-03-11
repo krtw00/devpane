@@ -1,7 +1,7 @@
-import type { Task, SchedulerStatus } from "@devpane/shared"
+import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, appendLog, updateTaskCost } from "./db.js"
-import { createWorktree, removeWorktree, mergeToMain, getWorktreeNewAndDeleted } from "./worktree.js"
+import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
@@ -28,42 +28,11 @@ export function isRateLimitError(message: string): boolean {
 const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 
 let alive = true
-let paused = false
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
-let startedAt = Date.now()
-let currentTaskId: string | null = null
-let currentTaskTitle: string | null = null
 
 export function stopScheduler(): void {
   alive = false
-}
-
-export function pauseScheduler(): void {
-  paused = true
-  broadcast("scheduler:status", getSchedulerStatus())
-}
-
-export function resumeScheduler(): void {
-  paused = false
-  broadcast("scheduler:status", getSchedulerStatus())
-}
-
-export function getSchedulerStatus(): SchedulerStatus {
-  return {
-    state: paused ? "paused" : "running",
-    current_task_id: currentTaskId,
-    current_task_title: currentTaskTitle,
-    uptime_sec: Math.floor((Date.now() - startedAt) / 1000),
-    rate_limit_hits: rateLimitHits,
-    started_at: new Date(startedAt).toISOString(),
-  }
-}
-
-async function waitWhilePaused(): Promise<void> {
-  while (paused && alive) {
-    await sleep(1000)
-  }
 }
 
 function getRateLimitBackoff(): number {
@@ -118,8 +87,6 @@ async function callPm(): Promise<Task[]> {
 async function executeTask(task: Task): Promise<void> {
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
-  currentTaskId = task.id
-  currentTaskTitle = task.title
   startTask(task.id, workerId)
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
@@ -146,14 +113,14 @@ async function executeTask(task: Task): Promise<void> {
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
 
-    // Merge successful tasks to main and update memories
+    // Create PR for successful tasks (human reviews and merges)
     if (status === "done" && facts.commit_hash) {
-      // Collect new/deleted files before worktree cleanup
       const { added, deleted } = getWorktreeNewAndDeleted(task.id)
 
-      try {
-        mergeToMain(task.id, task.title)
-        console.log(`[scheduler] merged task ${task.id} to main`)
+      const prUrl = createPullRequest(task.id, task.title, facts)
+      if (prUrl) {
+        console.log(`[scheduler] PR created for task ${task.id}: ${prUrl}`)
+        appendLog(task.id, "system", `[pr] ${prUrl}`)
 
         // Record new files as features
         for (const file of added) {
@@ -167,9 +134,8 @@ async function executeTask(task: Task): Promise<void> {
         if (added.length > 0 || deleted.length > 0) {
           console.log(`[scheduler] memory: +${added.length} features, -${deleted.length} forgotten`)
         }
-      } catch (mergeErr) {
-        const mergeMsg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr)
-        console.error(`[scheduler] merge failed for ${task.id}: ${mergeMsg}`)
+      } else {
+        console.error(`[scheduler] PR creation failed for task ${task.id}`)
       }
     }
 
@@ -179,10 +145,11 @@ async function executeTask(task: Task): Promise<void> {
       clearRateLimit()
     }
 
-    // Cleanup worktree after merge
+    // Cleanup worktree (keep branch if PR was created)
+    const hasPr = status === "done" && facts.commit_hash
     try {
-      removeWorktree(task.id)
-      console.log(`[scheduler] cleaned up worktree for task ${task.id}`)
+      removeWorktree(task.id, !!hasPr)
+      console.log(`[scheduler] cleaned up worktree for task ${task.id}${hasPr ? " (branch kept for PR)" : ""}`)
     } catch (cleanupErr) {
       const cleanupMsg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
       console.warn(`[scheduler] worktree cleanup failed for ${task.id}: ${cleanupMsg}`)
@@ -205,9 +172,6 @@ async function executeTask(task: Task): Promise<void> {
       // ignore cleanup errors on failure path
     }
   }
-
-  currentTaskId = null
-  currentTaskTitle = null
 }
 
 function recoverOrphanTasks(): void {
@@ -224,14 +188,10 @@ function recoverOrphanTasks(): void {
 export async function startScheduler(): Promise<void> {
   console.log("[scheduler] starting autonomous loop")
   alive = true
-  paused = false
-  startedAt = Date.now()
+  pruneWorktrees()
   recoverOrphanTasks()
 
   while (alive) {
-    await waitWhilePaused()
-    if (!alive) break
-
     // 1. Check for pending tasks
     let task = getNextPending()
 
