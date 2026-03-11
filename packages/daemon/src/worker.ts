@@ -3,6 +3,7 @@ import { createInterface } from "node:readline"
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
+import { broadcast } from "./ws.js"
 
 export type WorkerResult = {
   exit_code: number
@@ -64,11 +65,13 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
           // Log text deltas for progress visibility
           if (inner?.delta?.type === "text_delta" && inner.delta.text) {
             appendLog(task.id, "worker", inner.delta.text)
+            broadcast("task:log", { taskId: task.id, agent: "worker", message: inner.delta.text })
           }
           // Log tool use starts
           if (inner?.type === "content_block_start" && inner.content_block?.type === "tool_use") {
             const name = inner.content_block.name
             appendLog(task.id, "worker", `[tool] ${name}`)
+            broadcast("task:log", { taskId: task.id, agent: "worker", message: `[tool] ${name}` })
           }
         }
 
@@ -81,6 +84,7 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
       } catch {
         // Non-JSON line, log as-is
         appendLog(task.id, "worker", line)
+        broadcast("task:log", { taskId: task.id, agent: "worker", message: line })
       }
     })
 
@@ -95,7 +99,9 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
     // Idle timeout: kill if no output for WORKER_TIMEOUT_MS
     const idleCheck = setInterval(() => {
       if (Date.now() - lastActivity > config.WORKER_TIMEOUT_MS) {
-        appendLog(task.id, "worker", `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`)
+        const timeoutMsg = `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`
+        appendLog(task.id, "worker", timeoutMsg)
+        broadcast("task:log", { taskId: task.id, agent: "worker", message: timeoutMsg })
         proc.kill("SIGTERM")
         clearInterval(idleCheck)
       }
@@ -107,6 +113,7 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
       rl.close()
       if (stderr) {
         appendLog(task.id, "worker", `[stderr] ${stderr}`)
+        broadcast("task:log", { taskId: task.id, agent: "worker", message: `[stderr] ${stderr}` })
       }
       resolve({
         exit_code: code ?? 1,
@@ -121,6 +128,7 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
       clearInterval(idleCheck)
       rl.close()
       appendLog(task.id, "worker", `[error] ${err.message}`)
+      broadcast("task:log", { taskId: task.id, agent: "worker", message: `[error] ${err.message}` })
       reject(err)
     })
   })

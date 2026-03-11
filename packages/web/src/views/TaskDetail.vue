@@ -1,15 +1,32 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
 import { useTaskDetail } from '../composables/useApi'
+import { useSocket, onWsEvent } from '../composables/useSocket'
 
 const props = defineProps<{ id: string }>()
 const { task, logs, refresh } = useTaskDetail(props.id)
 
+useSocket()
+
+// Real-time log streaming via WebSocket
+onWsEvent('task:log', (payload) => {
+  const p = payload as { taskId: string; agent: string; message: string }
+  if (p.taskId !== props.id) return
+  logs.value.push({
+    id: `ws-${Date.now()}`,
+    task_id: p.taskId,
+    agent: p.agent,
+    message: p.message,
+    timestamp: new Date().toISOString(),
+  })
+})
+
+// Fallback polling at 30s
 let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 3000) // poll faster on detail
+  timer = setInterval(refresh, 30_000)
 })
 
 onUnmounted(() => clearInterval(timer))
