@@ -10,6 +10,7 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { checkFlowControl } from "./flow-control.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -244,6 +245,14 @@ export async function startScheduler(): Promise<void> {
   recoverOrphanTasks()
 
   while (alive) {
+    // 0. Flow control: WIP制限 + ジドウカ
+    const flow = await checkFlowControl()
+    if (!flow.canProceed) {
+      console.log(`[scheduler] paused by flow control: ${flow.reason}, waiting ${config.IDLE_INTERVAL_SEC}s`)
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      continue
+    }
+
     // 1. Check for pending tasks
     let task = getNextPending()
 
