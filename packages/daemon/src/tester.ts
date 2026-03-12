@@ -51,15 +51,27 @@ export function buildTesterPrompt(spec: PmOutput): string {
   ].join("\n")
 }
 
+function addTestFile(testFiles: string[], filePath: string): void {
+  if (filePath.endsWith(".test.ts") && !testFiles.includes(filePath)) {
+    testFiles.push(filePath)
+  }
+}
+
+function extractFilePathFromJson(json: string): string | null {
+  const match = json.match(/"file_path"\s*:\s*"([^"]+)"/)
+  return match ? match[1] : null
+}
+
 export function parseTesterOutput(stdout: string): string[] {
   const testFiles: string[] = []
+  let trackingToolUse = false
+  let jsonBuffer = ""
 
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue
     try {
       const event = JSON.parse(line)
 
-      // Track file writes to *.test.ts files
       if (event.type === "stream_event") {
         const inner = event.event
         if (
@@ -67,7 +79,29 @@ export function parseTesterOutput(stdout: string): string[] {
           inner.content_block?.type === "tool_use" &&
           (inner.content_block.name === "Write" || inner.content_block.name === "Edit")
         ) {
-          // File path will be in subsequent input_json_delta events
+          trackingToolUse = true
+          jsonBuffer = ""
+        } else if (
+          inner?.type === "content_block_start" &&
+          inner.content_block?.type === "tool_use"
+        ) {
+          trackingToolUse = false
+          jsonBuffer = ""
+        }
+
+        if (
+          trackingToolUse &&
+          inner?.type === "content_block_delta" &&
+          inner.delta?.type === "input_json_delta"
+        ) {
+          jsonBuffer += inner.delta.partial_json
+        }
+
+        if (inner?.type === "content_block_stop" && trackingToolUse) {
+          const filePath = extractFilePathFromJson(jsonBuffer)
+          if (filePath) addTestFile(testFiles, filePath)
+          trackingToolUse = false
+          jsonBuffer = ""
         }
       }
 
@@ -76,7 +110,7 @@ export function parseTesterOutput(stdout: string): string[] {
         const matches = event.result.match(/[\w/.-]+\.test\.ts/g)
         if (matches) {
           for (const m of matches) {
-            if (!testFiles.includes(m)) testFiles.push(m)
+            addTestFile(testFiles, m)
           }
         }
       }
@@ -85,7 +119,7 @@ export function parseTesterOutput(stdout: string): string[] {
       const matches = line.match(/[\w/.-]+\.test\.ts/g)
       if (matches) {
         for (const m of matches) {
-          if (!testFiles.includes(m)) testFiles.push(m)
+          addTestFile(testFiles, m)
         }
       }
     }
@@ -119,6 +153,8 @@ export function runTester(spec: PmOutput, worktreePath: string): Promise<TesterR
 
     const testFiles: string[] = []
     let lastActivity = Date.now()
+    let trackingToolUse = false
+    let jsonBuffer = ""
 
     const rl = createInterface({ input: proc.stdout })
 
@@ -129,11 +165,44 @@ export function runTester(spec: PmOutput, worktreePath: string): Promise<TesterR
       try {
         const event = JSON.parse(line)
 
+        if (event.type === "stream_event") {
+          const inner = event.event
+          if (
+            inner?.type === "content_block_start" &&
+            inner.content_block?.type === "tool_use" &&
+            (inner.content_block.name === "Write" || inner.content_block.name === "Edit")
+          ) {
+            trackingToolUse = true
+            jsonBuffer = ""
+          } else if (
+            inner?.type === "content_block_start" &&
+            inner.content_block?.type === "tool_use"
+          ) {
+            trackingToolUse = false
+            jsonBuffer = ""
+          }
+
+          if (
+            trackingToolUse &&
+            inner?.type === "content_block_delta" &&
+            inner.delta?.type === "input_json_delta"
+          ) {
+            jsonBuffer += inner.delta.partial_json
+          }
+
+          if (inner?.type === "content_block_stop" && trackingToolUse) {
+            const filePath = extractFilePathFromJson(jsonBuffer)
+            if (filePath) addTestFile(testFiles, filePath)
+            trackingToolUse = false
+            jsonBuffer = ""
+          }
+        }
+
         if (event.type === "result" && event.result) {
           const matches = event.result.match(/[\w/.-]+\.test\.ts/g)
           if (matches) {
             for (const m of matches) {
-              if (!testFiles.includes(m)) testFiles.push(m)
+              addTestFile(testFiles, m)
             }
           }
         }
