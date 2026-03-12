@@ -3,6 +3,7 @@ import type { AgentEvent } from "@devpane/shared/schemas"
 import { AgentEventSchema } from "@devpane/shared/schemas"
 import { getDb } from "./db.js"
 import { broadcast } from "./ws.js"
+import { notify } from "./discord.js"
 
 let stmt: ReturnType<typeof prepareStmt> | null = null
 let stmtDb: ReturnType<typeof getDb> | null = null
@@ -32,6 +33,7 @@ export function emit(event: AgentEvent): void {
   const now = new Date().toISOString()
   s.insert.run(id, event.type, JSON.stringify(event), now)
   broadcast("event", event)
+  notify(event).catch(() => {})
 }
 
 export function safeEmit(raw: unknown): boolean {
