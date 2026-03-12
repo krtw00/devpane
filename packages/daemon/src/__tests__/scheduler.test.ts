@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { tmpdir } from "node:os"
@@ -7,6 +7,7 @@ import { isRateLimitError, checkEffectMeasurement, getSchedulerState, setEffectM
 import { runGate2 } from "../gate2.js"
 import { buildTesterPrompt } from "../tester.js"
 import type { PmOutput } from "@devpane/shared"
+import type { AgentEvent } from "@devpane/shared/schemas"
 import { initDb, closeDb, getDb, createTask, startTask } from "../db.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -33,6 +34,14 @@ function createFinishedTask(status: "done" | "failed", finishedAt: string, costU
   )
   return task.id
 }
+
+// Capture emitted events for verification
+const emittedEvents: AgentEvent[] = []
+
+vi.mock("../events.js", () => ({
+  emit: vi.fn((event: AgentEvent) => { emittedEvents.push(event) }),
+  safeEmit: vi.fn(() => true),
+}))
 
 describe("isRateLimitError", () => {
   it("detects rate limit messages", () => {
@@ -203,5 +212,50 @@ describe("checkEffectMeasurement", () => {
     expect(event).toBeTruthy()
     const payload = JSON.parse(event!.payload)
     expect(payload.improvementId).toBe(impId)
+  })
+})
+
+describe("scheduler event emission", () => {
+  beforeEach(() => {
+    emittedEvents.length = 0
+  })
+
+  it("emit mock captures events correctly", async () => {
+    const { emit } = await import("../events.js")
+    emit({ type: "task.started", taskId: "t1", workerId: "w1" })
+    emit({ type: "gate.passed", taskId: "t1", gate: "gate1" })
+    emit({ type: "gate.rejected", taskId: "t2", gate: "gate3", verdict: "kill", reason: "no commit" })
+
+    expect(emittedEvents).toHaveLength(3)
+    expect(emittedEvents[0]).toEqual({ type: "task.started", taskId: "t1", workerId: "w1" })
+    expect(emittedEvents[1]).toEqual({ type: "gate.passed", taskId: "t1", gate: "gate1" })
+    expect(emittedEvents[2]).toEqual({
+      type: "gate.rejected",
+      taskId: "t2",
+      gate: "gate3",
+      verdict: "kill",
+      reason: "no commit",
+    })
+  })
+
+  it("emits all pipeline event types", async () => {
+    const { emit } = await import("../events.js")
+
+    const events: AgentEvent[] = [
+      { type: "task.started", taskId: "t1", workerId: "w1" },
+      { type: "gate.passed", taskId: "t1", gate: "gate1" },
+      { type: "gate.passed", taskId: "t1", gate: "gate3" },
+      { type: "task.completed", taskId: "t1", costUsd: 0.05 },
+      { type: "pr.created", taskId: "t1", url: "https://github.com/test/pr/1" },
+    ]
+
+    for (const e of events) emit(e)
+
+    expect(emittedEvents).toHaveLength(5)
+    const types = emittedEvents.map(e => e.type)
+    expect(types).toContain("task.started")
+    expect(types).toContain("gate.passed")
+    expect(types).toContain("task.completed")
+    expect(types).toContain("pr.created")
   })
 })

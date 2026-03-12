@@ -144,11 +144,13 @@ async function executeTask(task: Task): Promise<void> {
   const gate1 = await runGate1(task)
   if (gate1.verdict === "kill") {
     console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
+    emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: gate1.reasons.join("; ") })
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
     broadcast("task:updated", { id: task.id, status: "failed" })
     return
   }
+  emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
 
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
@@ -220,11 +222,13 @@ async function executeTask(task: Task): Promise<void> {
 
     if (gate3.verdict === "kill") {
       console.log(`[scheduler] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
+      emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "kill", reason: gate3.reasons.join("; ") })
       finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
       broadcast("task:updated", { id: task.id, status: "failed", result: facts })
     } else if (gate3.verdict === "recycle") {
+      emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "recycle", reason: gate3.reasons.join("; ") })
       const MAX_RETRIES = 2
       const retryCount = getRetryCount(task.id)
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
@@ -243,6 +247,7 @@ async function executeTask(task: Task): Promise<void> {
       }
     } else {
       // Gate 3 passed → PR作成
+      emit({ type: "gate.passed", taskId: task.id, gate: "gate3" })
       finishTask(task.id, "done", JSON.stringify(facts))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
 

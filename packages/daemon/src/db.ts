@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Task, TaskLog, TaskStatus, TaskCreator, Improvement } from "@devpane/shared"
+import type { AgentEvent } from "@devpane/shared/schemas"
 import { config } from "./config.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -38,6 +39,9 @@ function prepareStatements(db: Database.Database) {
     getTaskLogs: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC`),
     getActiveImprovements: db.prepare(`SELECT * FROM improvements WHERE status = 'active'`),
     getTasksSince: db.prepare(`SELECT * FROM tasks WHERE status IN ('done', 'failed') AND finished_at > ? ORDER BY finished_at ASC`),
+    insertAgentEvent: db.prepare(`INSERT INTO agent_events (id, type, payload, timestamp) VALUES (?, ?, ?, ?)`),
+    getAgentEvents: db.prepare(`SELECT * FROM agent_events ORDER BY timestamp DESC LIMIT ?`),
+    getAgentEventsByType: db.prepare(`SELECT * FROM agent_events WHERE type = ? ORDER BY timestamp DESC LIMIT ?`),
   }
 }
 
@@ -257,6 +261,24 @@ export function getActiveImprovements(): Improvement[] {
 export function getTasksSince(timestamp: string): Task[] {
   getDb()
   return stmts.getTasksSince.all(timestamp) as Task[]
+}
+
+type StoredAgentEvent = { id: string; type: string; payload: string; timestamp: string }
+
+export function insertAgentEvent(type: AgentEvent["type"], payload: AgentEvent): void {
+  const id = ulid()
+  const now = new Date().toISOString()
+  getDb()
+  stmts.insertAgentEvent.run(id, type, JSON.stringify(payload), now)
+}
+
+export function getAgentEvents(opts: { type?: AgentEvent["type"]; limit?: number } = {}): AgentEvent[] {
+  const limit = opts.limit ?? 100
+  getDb()
+  const rows = opts.type
+    ? stmts.getAgentEventsByType.all(opts.type, limit) as StoredAgentEvent[]
+    : stmts.getAgentEvents.all(limit) as StoredAgentEvent[]
+  return rows.map(r => JSON.parse(r.payload) as AgentEvent)
 }
 
 export function getCostStats() {
