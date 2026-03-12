@@ -1,7 +1,7 @@
 import { registerHook, type TaskCompletedData } from "./scheduler-hooks.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { emit, safeEmit } from "./events.js"
-import { remember, forget, findSimilar } from "./memory.js"
+import { remember, forget, findSimilar, cleanupOldLessons } from "./memory.js"
 import { getWorktreeNewAndDeleted } from "./worktree.js"
 import { getActiveImprovements, getFailedTasks, getDb, insertAgentEvent } from "./db.js"
 import { measureAllActive } from "./effect-measure.js"
@@ -38,6 +38,19 @@ export function checkEffectMeasurement(): void {
   for (const r of results) {
     console.log(`[scheduler] improvement ${r.improvementId}: ${r.verdict} (${(r.beforeFailureRate * 100).toFixed(1)}% → ${(r.afterFailureRate * 100).toFixed(1)}%)`)
   }
+}
+
+// --- Memory cleanup (古いlessonのアーカイブ) ---
+
+let memoryCleanupCompletions = 0
+export const MEMORY_CLEANUP_THRESHOLD = 10
+
+export function resetMemoryCleanupCounter(): void {
+  memoryCleanupCompletions = 0
+}
+
+export function getMemoryCleanupCounter(): number {
+  return memoryCleanupCompletions
 }
 
 // --- Kaizen (なぜなぜ分析) ---
@@ -132,6 +145,18 @@ registerHook("task.completed", (data: TaskCompletedData) => {
 registerHook("task.completed", () => {
   taskCompletionsSinceLastMeasure++
   checkEffectMeasurement()
+})
+
+// Memory cleanup hook
+registerHook("task.completed", () => {
+  memoryCleanupCompletions++
+  if (memoryCleanupCompletions >= MEMORY_CLEANUP_THRESHOLD) {
+    memoryCleanupCompletions = 0
+    const archived = cleanupOldLessons()
+    if (archived > 0) {
+      console.log(`[scheduler] memory cleanup: archived ${archived} old lessons`)
+    }
+  }
 })
 
 function parseConstraints(raw: string | null): string[] {
