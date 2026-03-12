@@ -3,6 +3,7 @@ import { createInterface } from "node:readline"
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
+import { emit } from "./events.js"
 
 export type WorkerResult = {
   exit_code: number
@@ -116,20 +117,40 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
     })
 
     // Idle timeout: kill if no output for WORKER_TIMEOUT_MS
+    let timedOut = false
+    let sigTermAt = 0
+    let sigkillCheck: ReturnType<typeof setInterval> | undefined
     const idleCheck = setInterval(() => {
       if (Date.now() - lastActivity > config.WORKER_TIMEOUT_MS) {
+        timedOut = true
         appendLog(task.id, "worker", `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`)
         proc.kill("SIGTERM")
         clearInterval(idleCheck)
+
+        // SIGKILL fallback: poll every 1s, force kill if SIGTERM ignored after 5s
+        sigTermAt = Date.now()
+        sigkillCheck = setInterval(() => {
+          if (Date.now() - sigTermAt > 5_000) {
+            clearInterval(sigkillCheck!)
+            if (!proc.killed) {
+              appendLog(task.id, "worker", `[timeout] SIGTERM ignored, sending SIGKILL`)
+              proc.kill("SIGKILL")
+            }
+          }
+        }, 1_000)
       }
     }, 30_000)
 
     proc.on("close", (code) => {
       activeProcs.delete(proc)
       clearInterval(idleCheck)
+      if (sigkillCheck) clearInterval(sigkillCheck)
       rl.close()
       if (stderr) {
         appendLog(task.id, "worker", `[stderr] ${stderr}`)
+      }
+      if (timedOut) {
+        emit({ type: "task.failed", taskId: task.id, rootCause: "timeout" })
       }
       resolve({
         exit_code: code ?? 1,
