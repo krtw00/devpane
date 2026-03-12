@@ -12,8 +12,12 @@ function prepare() {
       INSERT INTO memories (id, category, content, source_task_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `),
-    recall: db.prepare(`SELECT * FROM memories ORDER BY updated_at DESC`),
+    recall: db.prepare(`SELECT * FROM memories WHERE category != 'lesson_archived' ORDER BY updated_at DESC`),
     recallByCategory: db.prepare(`SELECT * FROM memories WHERE category = ? ORDER BY updated_at DESC`),
+    archiveOldLessons: db.prepare(`
+      UPDATE memories SET category = 'lesson_archived', updated_at = ?
+      WHERE category = 'lesson' AND created_at <= ?
+    `),
     forget: db.prepare(`DELETE FROM memories WHERE id = ?`),
     update: db.prepare(`UPDATE memories SET content = ?, updated_at = ? WHERE id = ?`),
     findByContent: db.prepare(`SELECT * FROM memories WHERE category = ? AND content LIKE ?`),
@@ -56,4 +60,12 @@ export function updateMemory(id: string, content: string): void {
 
 export function findSimilar(category: MemoryCategory, keyword: string): Memory[] {
   return getStmts().findByContent.all(category, `%${keyword}%`) as Memory[]
+}
+
+export function cleanupOldLessons(maxAgeDays: number = 30): number {
+  const s = getStmts()
+  const now = new Date()
+  const cutoff = new Date(now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000)
+  const result = s.archiveOldLessons.run(now.toISOString(), cutoff.toISOString())
+  return result.changes
 }

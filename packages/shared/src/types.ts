@@ -58,7 +58,7 @@ export type PmOutput = {
 }
 
 // Memory — PMの永続記憶
-export type MemoryCategory = "feature" | "decision" | "lesson"
+export type MemoryCategory = "feature" | "decision" | "lesson" | "lesson_archived"
 
 export type Memory = {
   id: string // ULID
