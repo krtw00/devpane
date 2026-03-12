@@ -256,3 +256,147 @@ describe("kaizen analyze() with LLM call", () => {
     expect(taskLines).toHaveLength(20)
   })
 })
+
+describe("kaizen analyze() edge cases", () => {
+  beforeEach(() => {
+    initDb(":memory:", migrationsDir)
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    closeDb()
+  })
+
+  it("strips markdown fences without language tag", async () => {
+    const withPlainFences = "```\n" + VALID_ANALYSIS + "\n```"
+    mockSpawnClaude.mockResolvedValue(withPlainFences)
+
+    createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    const result = await analyze()
+
+    expect(result).not.toBeNull()
+    expect(result!.analysis.top_failure).toBe("test_gap")
+  })
+
+  it("returns null when spawnClaude returns empty string", async () => {
+    mockSpawnClaude.mockResolvedValue("")
+
+    createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    const result = await analyze()
+
+    expect(result).toBeNull()
+  })
+
+  it("accepts JSON with extra fields (Zod strips unknown keys)", async () => {
+    const wrappedJson = JSON.stringify({
+      analysis: {
+        top_failure: "test_gap",
+        frequency: "2/10",
+        why_chain: ["理由1"],
+        extra_field: "should be stripped or ignored",
+      },
+      improvements: [
+        { target: "gate1", action: "add_check", description: "修正" },
+      ],
+    })
+    mockSpawnClaude.mockResolvedValue(wrappedJson)
+
+    createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    const result = await analyze()
+
+    expect(result).not.toBeNull()
+  })
+
+  it("returns null for improvements with >5 items", async () => {
+    const tooManyImprovements = JSON.stringify({
+      analysis: {
+        top_failure: "test_gap",
+        frequency: "5/10",
+        why_chain: ["理由1"],
+      },
+      improvements: Array.from({ length: 6 }, (_, i) => ({
+        target: "gate1",
+        action: "add_check",
+        description: `改善${i}`,
+      })),
+    })
+    mockSpawnClaude.mockResolvedValue(tooManyImprovements)
+
+    createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    const result = await analyze()
+
+    expect(result).toBeNull()
+  })
+
+  it("returns null for empty why_chain (min 1 required)", async () => {
+    const emptyWhyChain = JSON.stringify({
+      analysis: {
+        top_failure: "test_gap",
+        frequency: "1/10",
+        why_chain: [],
+      },
+      improvements: [
+        { target: "gate1", action: "add_check", description: "修正" },
+      ],
+    })
+    mockSpawnClaude.mockResolvedValue(emptyWhyChain)
+
+    createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    const result = await analyze()
+
+    expect(result).toBeNull()
+  })
+
+  it("passes --output-format json flag to spawnClaude", async () => {
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+
+    createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    await analyze()
+
+    const [args] = mockSpawnClaude.mock.calls[0]
+    expect(args).toContain("--output-format")
+    expect(args).toContain("json")
+  })
+
+  it("accepts all valid top_failure enum values", async () => {
+    const validValues = ["spec_ambiguity", "test_gap", "scope_creep", "api_misuse", "env_issue", "regression", "timeout", "unknown"]
+
+    for (const topFailure of validValues) {
+      initDb(":memory:", migrationsDir)
+      vi.clearAllMocks()
+
+      const analysis = JSON.stringify({
+        analysis: {
+          top_failure: topFailure,
+          frequency: "1/10",
+          why_chain: ["reason"],
+        },
+        improvements: [
+          { target: "gate1", action: "add_check", description: "fix" },
+        ],
+      })
+      mockSpawnClaude.mockResolvedValue(analysis)
+      createFailedTask()
+
+      const { analyze } = await import("../kaizen.js")
+      const result = await analyze()
+
+      expect(result, `top_failure=${topFailure} should be valid`).not.toBeNull()
+      expect(result!.analysis.top_failure).toBe(topFailure)
+
+      closeDb()
+    }
+  })
+})
