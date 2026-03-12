@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { runGate1 } from "../gate1.js"
+import { runGate1Rules } from "../gate1.js"
 import { initDb, closeDb, createTask, getDb } from "../db.js"
 import { remember } from "../memory.js"
 import type { Task } from "@devpane/shared"
@@ -26,20 +26,20 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   }
 }
 
-describe("Gate1", () => {
+describe("Gate1 Rules", () => {
   beforeEach(() => {
     closeDb()
     initDb(":memory:")
   })
 
   it("passes a valid new task", () => {
-    const result = runGate1(makeTask())
+    const result = runGate1Rules(makeTask())
     expect(result.verdict).toBe("go")
     expect(result.reasons).toHaveLength(0)
   })
 
   it("kills task with too-short description", () => {
-    const result = runGate1(makeTask({ description: "short" }))
+    const result = runGate1Rules(makeTask({ description: "short" }))
     expect(result.verdict).toBe("kill")
     expect(result.reasons[0]).toMatch(/description too short/)
   })
@@ -49,16 +49,16 @@ describe("Gate1", () => {
     const db = getDb()
     db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(done.id)
 
-    const result = runGate1(makeTask({ title: "スケジューラ制御API" }))
+    const result = runGate1Rules(makeTask({ title: "スケジューラ制御API" }))
     expect(result.verdict).toBe("kill")
-    expect(result.reasons.some(r => r.includes("duplicate"))).toBe(true)
+    expect(result.reasons.some((r: string) => r.includes("duplicate"))).toBe(true)
   })
 
   it("kills task that conflicts with feature memory", () => {
     remember("feature", "packages/daemon/src/api/scheduler.ts を追加（スケジューラ制御API）")
 
-    const result = runGate1(makeTask({ title: "スケジューラ制御API" }))
+    const result = runGate1Rules(makeTask({ title: "スケジューラ制御API" }))
     expect(result.verdict).toBe("kill")
-    expect(result.reasons.some(r => r.includes("feature memory"))).toBe(true)
+    expect(result.reasons.some((r: string) => r.includes("feature memory"))).toBe(true)
   })
 })

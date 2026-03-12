@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Task, Memory, PmOutput } from "@devpane/shared"
@@ -6,57 +5,9 @@ import { PmOutputSchema } from "@devpane/shared/schemas"
 import { config } from "./config.js"
 import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
 import { recall } from "./memory.js"
+import { spawnClaude, killAllClaude } from "./claude.js"
 
-const activeProcs = new Set<ChildProcess>()
-
-export function killAllPm(): void {
-  for (const proc of activeProcs) {
-    proc.kill("SIGTERM")
-  }
-  activeProcs.clear()
-}
-
-function spawnClaude(args: string[], cwd: string, stdin: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env }
-    delete env.CLAUDECODE
-
-    const proc = spawn("claude", args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] })
-    activeProcs.add(proc)
-
-    let stdout = ""
-    let stderr = ""
-    proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
-    proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
-
-    const timeout = setTimeout(() => {
-      proc.kill("SIGTERM")
-    }, config.PM_TIMEOUT_MS)
-
-    proc.on("close", (code, signal) => {
-      activeProcs.delete(proc)
-      clearTimeout(timeout)
-      if (signal) {
-        reject(new Error(`claude killed by signal ${signal} (timeout?). stderr: ${stderr.slice(0, 500)}`))
-      } else if (code !== 0) {
-        const detail = stderr || stdout
-        reject(new Error(`claude exited ${code}: ${detail.slice(0, 1000)}`))
-      } else {
-        resolve(stdout)
-      }
-    })
-    proc.on("error", (err) => {
-      activeProcs.delete(proc)
-      clearTimeout(timeout)
-      reject(err)
-    })
-
-    if (stdin) {
-      proc.stdin.write(stdin)
-    }
-    proc.stdin.end()
-  })
-}
+export const killAllPm = killAllClaude
 
 type PmContext = {
   claudeMd: string
@@ -206,7 +157,7 @@ export async function runPm(): Promise<PmOutput> {
   console.log(`[pm] generating tasks... (prompt: ${prompt.length} chars, timeout: ${config.PM_TIMEOUT_MS}ms)`)
   console.log(`[pm] running: claude ${args.filter(a => a !== prompt).join(" ")} [prompt omitted]`)
 
-  const stdout = await spawnClaude(args, config.PROJECT_ROOT, "")
+  const stdout = await spawnClaude(args, config.PROJECT_ROOT)
 
   const output = parsePmOutput(stdout)
   console.log(`[pm] generated ${output.tasks.length} tasks: ${output.reasoning}`)

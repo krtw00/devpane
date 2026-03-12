@@ -99,7 +99,7 @@ async function callPm(): Promise<Task[]> {
 
 async function executeTask(task: Task): Promise<void> {
   // Gate 1: 方針チェック（Worker実行前に弾く）
-  const gate1 = runGate1(task)
+  const gate1 = await runGate1(task)
   if (gate1.verdict === "kill") {
     console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
