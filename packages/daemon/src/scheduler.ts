@@ -15,6 +15,8 @@ import { runTester } from "./tester.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { circuitBreaker } from "./circuit-breaker.js"
 import { runPrAgent } from "./pr-agent.js"
+import { getActiveImprovements } from "./db.js"
+import { measureAllActive } from "./effect-measure.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -45,9 +47,29 @@ let alive = true
 let paused = false
 let rateLimitHits = 0
 let pmConsecutiveFailures = 0
+let taskCompletionsSinceLastMeasure = 0
+
+export const EFFECT_MEASURE_THRESHOLD = 10
+
+export function checkEffectMeasurement(): void {
+  const actives = getActiveImprovements()
+  if (actives.length === 0) {
+    taskCompletionsSinceLastMeasure = 0
+    return
+  }
+
+  if (taskCompletionsSinceLastMeasure < EFFECT_MEASURE_THRESHOLD) return
+
+  taskCompletionsSinceLastMeasure = 0
+  console.log(`[scheduler] running effect measurement for ${actives.length} active improvements`)
+  const results = measureAllActive()
+  for (const r of results) {
+    console.log(`[scheduler] improvement ${r.improvementId}: ${r.verdict} (${(r.beforeFailureRate * 100).toFixed(1)}% → ${(r.afterFailureRate * 100).toFixed(1)}%)`)
+  }
+}
 
 export function getSchedulerState() {
-  return { alive, rateLimitHits, pmConsecutiveFailures }
+  return { alive, rateLimitHits, pmConsecutiveFailures, taskCompletionsSinceLastMeasure }
 }
 
 export function pauseScheduler(): void {
@@ -61,6 +83,14 @@ export function resumeScheduler(): void {
 export function stopScheduler(): void {
   alive = false
   stopDailyReportTimer()
+}
+
+export function resetEffectMeasureCounter(): void {
+  taskCompletionsSinceLastMeasure = 0
+}
+
+export function setEffectMeasureCounter(n: number): void {
+  taskCompletionsSinceLastMeasure = n
 }
 
 async function callPm(): Promise<Task[]> {
@@ -265,6 +295,10 @@ async function executeTask(task: Task): Promise<void> {
     }
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
+
+    // 効果測定: タスク完了カウンターをインクリメント
+    taskCompletionsSinceLastMeasure++
+    checkEffectMeasurement()
 
     if (isRateLimitError(result.result_text)) {
       rateLimitHits++
