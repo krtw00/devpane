@@ -11,5 +11,8 @@ export const router = createRouter({
     { path: '/tasks/:id', component: TaskDetail, props: true },
     { path: '/events', component: EventsLog },
     { path: '/memories', component: Memories },
+    { path: '/cost', component: () => import('../views/CostDashboard.vue') },
+    { path: '/metrics', component: () => import('../views/MetricsDashboard.vue') },
+    { path: '/improvements', component: () => import('../views/ImprovementsView.vue') },
   ],
 })
