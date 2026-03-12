@@ -49,6 +49,7 @@ let pmConsecutiveFailures = 0
 
 // Re-export from scheduler-plugins for backward compatibility
 export { EFFECT_MEASURE_THRESHOLD, checkEffectMeasurement, resetEffectMeasureCounter, setEffectMeasureCounter, getEffectMeasureCounter } from "./scheduler-plugins.js"
+export { KAIZEN_THRESHOLD, checkKaizenAnalysis, resetKaizenCounter, setKaizenCounter, getKaizenCounter } from "./scheduler-plugins.js"
 import { getEffectMeasureCounter } from "./scheduler-plugins.js"
 
 export function getSchedulerState() {

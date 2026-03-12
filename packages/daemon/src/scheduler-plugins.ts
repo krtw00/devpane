@@ -1,10 +1,12 @@
 import { registerHook, type TaskCompletedData } from "./scheduler-hooks.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
-import { safeEmit } from "./events.js"
+import { emit, safeEmit } from "./events.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { getWorktreeNewAndDeleted } from "./worktree.js"
-import { getActiveImprovements } from "./db.js"
+import { getActiveImprovements, getFailedTasks, getDb, insertAgentEvent } from "./db.js"
 import { measureAllActive } from "./effect-measure.js"
+import { analyze } from "./kaizen.js"
+import { ulid } from "ulid"
 
 let taskCompletionsSinceLastMeasure = 0
 export const EFFECT_MEASURE_THRESHOLD = 10
@@ -37,6 +39,56 @@ export function checkEffectMeasurement(): void {
     console.log(`[scheduler] improvement ${r.improvementId}: ${r.verdict} (${(r.beforeFailureRate * 100).toFixed(1)}% → ${(r.afterFailureRate * 100).toFixed(1)}%)`)
   }
 }
+
+// --- Kaizen (なぜなぜ分析) ---
+
+let kaizenCompletions = 0
+export const KAIZEN_THRESHOLD = 10
+
+export function resetKaizenCounter(): void {
+  kaizenCompletions = 0
+}
+
+export function setKaizenCounter(n: number): void {
+  kaizenCompletions = n
+}
+
+export function getKaizenCounter(): number {
+  return kaizenCompletions
+}
+
+export function checkKaizenAnalysis(): void {
+  if (kaizenCompletions < KAIZEN_THRESHOLD) return
+
+  kaizenCompletions = 0
+
+  const failures = getFailedTasks()
+  if (failures.length === 0) return
+
+  const result = analyze()
+  if (!result) return
+
+  const db = getDb()
+  const insertStmt = db.prepare(
+    `INSERT INTO improvements (id, trigger_analysis, target, action, applied_at, status) VALUES (?, ?, ?, ?, ?, 'active')`,
+  )
+
+  for (const imp of result.improvements) {
+    const id = ulid()
+    const triggerAnalysis = JSON.stringify(result.analysis)
+    insertStmt.run(id, triggerAnalysis, imp.target, imp.action, new Date().toISOString())
+
+    const event = { type: "improvement.applied" as const, improvementId: id, target: imp.target }
+    emit(event)
+    insertAgentEvent("improvement.applied", event)
+  }
+}
+
+// Kaizen hook
+registerHook("task.completed", () => {
+  kaizenCompletions++
+  checkKaizenAnalysis()
+})
 
 // SPC hook
 registerHook("task.completed", (data: TaskCompletedData) => {
