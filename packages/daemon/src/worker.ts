@@ -22,20 +22,33 @@ export function killAllWorkers(): void {
   activeProcs.clear()
 }
 
-export function runWorker(task: Task, worktreePath: string): Promise<WorkerResult> {
+export function runWorker(task: Task, worktreePath: string, testFiles: string[] = []): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const fullPrompt = [
-      task.description,
+    const promptParts = [task.description]
+
+    if (testFiles.length > 0) {
+      promptParts.push(
+        "",
+        "## テスト先行実装",
+        "以下のテストファイルが既にworktree内に存在する。これらのテストを通す実装を書け。",
+        "テストの意図を読み取り、仕様通りの実装を行うこと。テストを削除・改変してはならない。",
+        ...testFiles.map(f => `- ${f}`),
+      )
+    }
+
+    promptParts.push(
       "",
       "## 品質要件（必須）",
       "- 実装後に `pnpm build` が通ること（型エラーなし）",
       "- `pnpm test` が通ること（既存テストを壊さない）",
       "- lint警告を残さないこと（未使用import、未使用変数など）",
       "- 新規ファイルは既存コードのスタイルに従うこと",
-    ].join("\n")
+    )
+
+    const fullPrompt = promptParts.join("\n")
 
     const proc = spawn("claude", [
       "-p", fullPrompt,

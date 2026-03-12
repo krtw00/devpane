@@ -17,9 +17,15 @@ export function killAllTesters(): void {
   activeProcs.clear()
 }
 
-function buildTesterPrompt(spec: PmOutput): string {
+export function buildTesterPrompt(spec: PmOutput): string {
   const taskDescriptions = spec.tasks
-    .map((t, i) => `### タスク${i + 1}: ${t.title}\n${t.description}`)
+    .map((t, i) => {
+      const lines = [`### タスク${i + 1}: ${t.title}\n${t.description}`]
+      if (t.constraints && t.constraints.length > 0) {
+        lines.push(`\n**制約条件:**\n${t.constraints.map(c => `- ${c}`).join("\n")}`)
+      }
+      return lines.join("")
+    })
     .join("\n\n")
 
   return [
