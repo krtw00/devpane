@@ -93,6 +93,11 @@ export type SpcMetric = {
   recorded_at: string
 }
 
+export type ActiveHours = {
+  start: number // 0-23
+  end: number   // 0-23
+}
+
 // Config
 export type Config = {
   PROJECT_ROOT: string
@@ -106,4 +111,5 @@ export type Config = {
   API_PORT: number
   MAX_RETRIES: number
   MAX_DIFF_SIZE: number
+  ACTIVE_HOURS: ActiveHours | null
 }
