@@ -69,13 +69,13 @@ export function assessRisk(pr: PrInfo): PrReport {
     return { pr, diffSize, risk: "not_recommended", reason: "テスト失敗" }
   }
 
-  if (pr.testStatus === "pass" && diffSize < 300) {
+  if (pr.testStatus === "pass" && diffSize < config.PR_RISK_DIFF_THRESHOLD) {
     return { pr, diffSize, risk: "recommended", reason: "テスト通過 & diff小" }
   }
 
   const reasons: string[] = []
   if (pr.testStatus === "unknown") reasons.push("テスト結果不明")
-  if (diffSize >= 300) reasons.push(`diff大 (${diffSize}行)`)
+  if (diffSize >= config.PR_RISK_DIFF_THRESHOLD) reasons.push(`diff大 (${diffSize}行)`)
 
   return { pr, diffSize, risk: "needs_review", reason: reasons.join(", ") }
 }

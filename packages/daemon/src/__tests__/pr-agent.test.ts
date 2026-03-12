@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { parseGhPrList, assessRisk } from "../pr-agent.js"
 import type { PrInfo } from "../pr-agent.js"
+import { config } from "../config.js"
 
 function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
   return {
@@ -113,5 +114,51 @@ describe("assessRisk", () => {
     expect(report.risk).toBe("needs_review")
     expect(report.reason).toMatch(/テスト結果不明/)
     expect(report.reason).toMatch(/diff大/)
+  })
+})
+
+describe("assessRisk with PR_RISK_DIFF_THRESHOLD", () => {
+  let originalThreshold: number
+
+  beforeEach(() => {
+    originalThreshold = config.PR_RISK_DIFF_THRESHOLD
+  })
+
+  afterEach(() => {
+    config.PR_RISK_DIFF_THRESHOLD = originalThreshold
+  })
+
+  it("uses PR_RISK_DIFF_THRESHOLD from config instead of hardcoded 300", () => {
+    config.PR_RISK_DIFF_THRESHOLD = 100
+    const report = assessRisk(makePr({ testStatus: "pass", additions: 60, deletions: 50 }))
+    // diffSize=110 >= threshold=100 → needs_review
+    expect(report.risk).toBe("needs_review")
+    expect(report.reason).toMatch(/diff大/)
+  })
+
+  it("returns recommended when diff is below custom threshold", () => {
+    config.PR_RISK_DIFF_THRESHOLD = 500
+    const report = assessRisk(makePr({ testStatus: "pass", additions: 200, deletions: 100 }))
+    // diffSize=300 < threshold=500 → recommended
+    expect(report.risk).toBe("recommended")
+  })
+
+  it("returns needs_review at exact threshold boundary", () => {
+    config.PR_RISK_DIFF_THRESHOLD = 200
+    const report = assessRisk(makePr({ testStatus: "pass", additions: 100, deletions: 100 }))
+    // diffSize=200 >= threshold=200 → needs_review
+    expect(report.risk).toBe("needs_review")
+  })
+
+  it("returns recommended just below threshold boundary", () => {
+    config.PR_RISK_DIFF_THRESHOLD = 200
+    const report = assessRisk(makePr({ testStatus: "pass", additions: 100, deletions: 99 }))
+    // diffSize=199 < threshold=200 → recommended
+    expect(report.risk).toBe("recommended")
+  })
+
+  it("defaults to 300 when PR_RISK_DIFF_THRESHOLD is not explicitly set", () => {
+    // デフォルト値が300であることを確認
+    expect(originalThreshold).toBe(300)
   })
 })
