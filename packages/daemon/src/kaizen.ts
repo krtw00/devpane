@@ -1,12 +1,17 @@
-import { execFileSync } from "node:child_process"
 import type { WhyWhyAnalysis } from "@devpane/shared/schemas"
 import { WhyWhyAnalysisSchema } from "@devpane/shared/schemas"
 import { getFailedTasks } from "./db.js"
+import { spawnClaude } from "./claude.js"
 
 const CLAUDE_TIMEOUT_MS = 120_000
+const MAX_INPUT_TASKS = 20
 
-export function analyze(): WhyWhyAnalysis | null {
-  const failures = getFailedTasks()
+function stripMarkdownFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*\n?/m, "").replace(/\n?```\s*$/m, "")
+}
+
+export async function analyze(): Promise<WhyWhyAnalysis | null> {
+  const failures = getFailedTasks().slice(0, MAX_INPUT_TASKS)
   if (failures.length === 0) return null
 
   const taskSummaries = failures.map(t =>
@@ -31,12 +36,10 @@ ${taskSummaries}
 Respond with ONLY the JSON object, no markdown fences or explanation.`
 
   try {
-    const output = execFileSync("claude", ["-p", prompt, "--output-format", "json"], {
-      encoding: "utf-8",
-      timeout: CLAUDE_TIMEOUT_MS,
-    })
+    const output = await spawnClaude(["-p", prompt, "--output-format", "json"], ".", CLAUDE_TIMEOUT_MS)
 
-    const parsed = JSON.parse(output)
+    const cleaned = stripMarkdownFences(output)
+    const parsed = JSON.parse(cleaned)
     const result = WhyWhyAnalysisSchema.safeParse(parsed)
     if (!result.success) {
       console.warn("[kaizen] analysis failed validation:", result.error.message)
