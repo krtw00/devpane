@@ -100,3 +100,132 @@ describe("x", () => { it("y", () => {})
     expect(result.verdict).toBe("go")
   })
 })
+
+describe("Gate 2 — invariants check", () => {
+  const specWithInvariants: PmOutput = {
+    tasks: [{
+      title: "add auth",
+      description: "implement authentication",
+      priority: 80,
+      invariants: ["token must expire", "invalid credentials return 401"],
+    }],
+    reasoning: "security requirement",
+  }
+
+  it("passes when all invariants are covered in test file", () => {
+    const content = `
+describe("auth", () => {
+  it("token must expire after TTL", () => {
+    expect(isExpired(token)).toBe(true)
+  })
+  it("invalid credentials return 401", () => {
+    expect(res.status).toBe(401)
+  })
+})
+`
+    writeFileSync(join(workdir, "auth.test.ts"), content)
+    const result = runGate2(specWithInvariants, ["auth.test.ts"], workdir)
+    expect(result.verdict).toBe("go")
+    expect(result.reasons).toHaveLength(0)
+  })
+
+  it("recycles when invariant keyword is missing from test file", () => {
+    const content = `
+describe("auth", () => {
+  it("logs in successfully", () => {
+    expect(res.status).toBe(200)
+  })
+})
+`
+    writeFileSync(join(workdir, "auth.test.ts"), content)
+    const result = runGate2(specWithInvariants, ["auth.test.ts"], workdir)
+    expect(result.verdict).toBe("recycle")
+    expect(result.reasons.some(r => r.includes("token must expire"))).toBe(true)
+    expect(result.reasons.some(r => r.includes("invalid credentials return 401"))).toBe(true)
+  })
+
+  it("recycles when only some invariants are covered", () => {
+    const content = `
+describe("auth", () => {
+  it("token must expire", () => {
+    expect(isExpired(token)).toBe(true)
+  })
+})
+`
+    writeFileSync(join(workdir, "auth.test.ts"), content)
+    const result = runGate2(specWithInvariants, ["auth.test.ts"], workdir)
+    expect(result.verdict).toBe("recycle")
+    expect(result.reasons.some(r => r.includes("invalid credentials return 401"))).toBe(true)
+    expect(result.reasons.every(r => !r.includes("token must expire"))).toBe(true)
+  })
+
+  it("passes when spec has no invariants", () => {
+    const noInvariants: PmOutput = {
+      tasks: [{ title: "refactor", description: "cleanup", priority: 30 }],
+      reasoning: "tech debt",
+    }
+    const content = `describe("x", () => { it("y", () => {}) })\n`
+    writeFileSync(join(workdir, "clean.test.ts"), content)
+    const result = runGate2(noInvariants, ["clean.test.ts"], workdir)
+    expect(result.verdict).toBe("go")
+  })
+
+  it("passes when invariants array is empty", () => {
+    const emptyInvariants: PmOutput = {
+      tasks: [{ title: "refactor", description: "cleanup", priority: 30, invariants: [] }],
+      reasoning: "tech debt",
+    }
+    const content = `describe("x", () => { it("y", () => {}) })\n`
+    writeFileSync(join(workdir, "clean.test.ts"), content)
+    const result = runGate2(emptyInvariants, ["clean.test.ts"], workdir)
+    expect(result.verdict).toBe("go")
+  })
+
+  it("checks invariants across all test files", () => {
+    const content1 = `
+describe("auth", () => {
+  it("token must expire", () => {})
+})
+`
+    const content2 = `
+describe("errors", () => {
+  it("invalid credentials return 401", () => {})
+})
+`
+    writeFileSync(join(workdir, "auth.test.ts"), content1)
+    writeFileSync(join(workdir, "error.test.ts"), content2)
+    const result = runGate2(specWithInvariants, ["auth.test.ts", "error.test.ts"], workdir)
+    expect(result.verdict).toBe("go")
+  })
+
+  it("matches invariants case-insensitively", () => {
+    const content = `
+describe("auth", () => {
+  it("Token Must Expire after TTL", () => {})
+  it("Invalid Credentials Return 401", () => {})
+})
+`
+    writeFileSync(join(workdir, "auth.test.ts"), content)
+    const result = runGate2(specWithInvariants, ["auth.test.ts"], workdir)
+    expect(result.verdict).toBe("go")
+  })
+
+  it("aggregates invariants from multiple tasks", () => {
+    const multiTask: PmOutput = {
+      tasks: [
+        { title: "auth", description: "auth", priority: 80, invariants: ["token must expire"] },
+        { title: "api", description: "api", priority: 60, invariants: ["rate limit enforced"] },
+      ],
+      reasoning: "multi-task",
+    }
+    const content = `
+describe("all", () => {
+  it("token must expire", () => {})
+})
+`
+    writeFileSync(join(workdir, "all.test.ts"), content)
+    const result = runGate2(multiTask, ["all.test.ts"], workdir)
+    expect(result.verdict).toBe("recycle")
+    expect(result.reasons.some(r => r.includes("rate limit enforced"))).toBe(true)
+  })
+})

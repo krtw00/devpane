@@ -53,7 +53,7 @@ export type TaskLog = {
 
 // PM output — PMが返すタスクリスト
 export type PmOutput = {
-  tasks: { title: string; description: string; priority: number; constraints?: string[] }[]
+  tasks: { title: string; description: string; priority: number; constraints?: string[]; invariants?: string[] }[]
   reasoning: string
 }
 

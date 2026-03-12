@@ -50,6 +50,23 @@ export function runGate2(_spec: PmOutput, testFiles: string[], worktreePath: str
     }
   }
 
+  // Rule 4: 仕様のinvariantsキーワードがテストに含まれるか照合
+  const allInvariants = _spec.tasks.flatMap(t => t.invariants ?? [])
+  if (allInvariants.length > 0) {
+    const allContent = existing
+      .map(f => {
+        try { return readFileSync(join(worktreePath, f), "utf-8") } catch { return "" }
+      })
+      .join("\n")
+      .toLowerCase()
+
+    for (const inv of allInvariants) {
+      if (!allContent.includes(inv.toLowerCase())) {
+        reasons.push(`invariant not covered: ${inv}`)
+      }
+    }
+  }
+
   return {
     verdict: reasons.length > 0 ? "recycle" : "go",
     reasons,
