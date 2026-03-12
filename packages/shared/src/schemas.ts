@@ -7,6 +7,7 @@ export const PmTaskSchema = z.object({
   description: z.string().min(1),
   priority: z.number().int().min(0).max(100),
   constraints: z.array(z.string()).optional(),
+  invariants: z.array(z.string()).optional(),
 })
 
 export const PmOutputSchema = z.object({
