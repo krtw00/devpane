@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { initDb, closeDb, createTask, getTask, getNextPending, getAllTasks, getTasksByStatus, getRecentDone, getFailedTasks, startTask, finishTask, revertToPending, appendLog, getTaskLogs, updateTaskCost, getCostStats } from "../db.js"
+import { initDb, closeDb, createTask, getTask, getNextPending, getAllTasks, getTasksByStatus, getRecentDone, getFailedTasks, startTask, finishTask, revertToPending, appendLog, getTaskLogs, updateTaskCost, getCostStats, insertAgentEvent, getAgentEvents } from "../db.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // __dirname may resolve to dist/__tests__ or src/__tests__; always use src/migrations
@@ -173,6 +173,44 @@ describe("db", () => {
 
     it("returns empty array for unknown task", () => {
       expect(getTaskLogs("unknown")).toEqual([])
+    })
+  })
+
+  describe("insertAgentEvent / getAgentEvents", () => {
+    it("inserts and retrieves agent events", () => {
+      insertAgentEvent("task.started", { type: "task.started", taskId: "t1", workerId: "w1" })
+      insertAgentEvent("task.completed", { type: "task.completed", taskId: "t1", costUsd: 0.05 })
+
+      const all = getAgentEvents()
+      expect(all).toHaveLength(2)
+      const types = all.map(e => e.type)
+      expect(types).toContain("task.started")
+      expect(types).toContain("task.completed")
+    })
+
+    it("filters by type", () => {
+      insertAgentEvent("gate.passed", { type: "gate.passed", taskId: "t1", gate: "gate1" })
+      insertAgentEvent("gate.rejected", { type: "gate.rejected", taskId: "t2", gate: "gate3", verdict: "kill", reason: "no commit" })
+      insertAgentEvent("gate.passed", { type: "gate.passed", taskId: "t3", gate: "gate3" })
+
+      const passed = getAgentEvents({ type: "gate.passed" })
+      expect(passed).toHaveLength(2)
+      expect(passed.every(e => e.type === "gate.passed")).toBe(true)
+
+      const rejected = getAgentEvents({ type: "gate.rejected" })
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].type).toBe("gate.rejected")
+    })
+
+    it("respects limit", () => {
+      for (let i = 0; i < 10; i++) {
+        insertAgentEvent("task.started", { type: "task.started", taskId: `t${i}`, workerId: "w" })
+      }
+      expect(getAgentEvents({ limit: 3 })).toHaveLength(3)
+    })
+
+    it("returns empty array when no events", () => {
+      expect(getAgentEvents()).toEqual([])
     })
   })
 
