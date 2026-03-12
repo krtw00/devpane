@@ -22,6 +22,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const PM_BACKOFF_BASE_SEC = 30
+const PM_BACKOFF_MAX_SEC = 300
+
+/** Calculate exponential backoff seconds based on consecutive failure count.
+ *  Cooldown triggers every 3 failures: cooldownCount = floor(failures / 3).
+ *  Backoff = base * 2^(cooldownCount-1), capped at max. */
+export function calculatePmBackoff(consecutiveFailures: number): number {
+  const cooldownCount = Math.floor(consecutiveFailures / 3)
+  if (cooldownCount <= 0) return PM_BACKOFF_BASE_SEC
+  const backoff = PM_BACKOFF_BASE_SEC * Math.pow(2, cooldownCount - 1)
+  return Math.min(backoff, PM_BACKOFF_MAX_SEC)
+}
+
 function parseConstraints(raw: string | null): string[] {
   if (!raw) return []
   try {
@@ -57,6 +70,14 @@ import { getEffectMeasureCounter } from "./scheduler-plugins.js"
 export function getSchedulerState() {
   return { alive, rateLimitHits, pmConsecutiveFailures, taskCompletionsSinceLastMeasure: getEffectMeasureCounter() }
 }
+
+/** @internal テスト用 */
+export function resetPmConsecutiveFailures(): void {
+  pmConsecutiveFailures = 0
+}
+
+/** @internal テスト用 */
+export { callPm as _callPm }
 
 export function pauseScheduler(): void {
   paused = true
@@ -114,10 +135,10 @@ async function callPm(): Promise<Task[]> {
     console.error(`[scheduler] PM failed (${pmConsecutiveFailures}x): ${msg}`)
     appendLog("scheduler", "pm", `[error] PM failed: ${msg}`)
 
-    if (pmConsecutiveFailures >= 3) {
-      console.error(`[scheduler] PM failed 3x, cooling down ${config.COOLDOWN_INTERVAL_SEC}s`)
-      await sleep(config.COOLDOWN_INTERVAL_SEC * 1000)
-      pmConsecutiveFailures = 0
+    if (pmConsecutiveFailures % 3 === 0) {
+      const backoffSec = calculatePmBackoff(pmConsecutiveFailures)
+      console.error(`[scheduler] PM failed ${pmConsecutiveFailures}x, cooling down ${backoffSec}s`)
+      await sleep(backoffSec * 1000)
     } else {
       await sleep(config.PM_RETRY_INTERVAL_SEC * 1000)
     }

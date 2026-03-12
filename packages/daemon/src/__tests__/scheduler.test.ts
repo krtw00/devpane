@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
-import { isRateLimitError, checkEffectMeasurement, getSchedulerState, setEffectMeasureCounter, resetEffectMeasureCounter, EFFECT_MEASURE_THRESHOLD } from "../scheduler.js"
+import { isRateLimitError, checkEffectMeasurement, getSchedulerState, setEffectMeasureCounter, resetEffectMeasureCounter, EFFECT_MEASURE_THRESHOLD, calculatePmBackoff, _callPm, resetPmConsecutiveFailures } from "../scheduler.js"
 import { runGate2 } from "../gate2.js"
 import { buildTesterPrompt } from "../tester.js"
 import type { PmOutput } from "@devpane/shared"
@@ -253,5 +253,118 @@ describe("scheduler event emission", () => {
     expect(types).toContain("gate.passed")
     expect(types).toContain("task.completed")
     expect(types).toContain("pr.created")
+  })
+})
+
+describe("calculatePmBackoff", () => {
+  it("returns 30s for first cooldown (3 consecutive failures)", () => {
+    expect(calculatePmBackoff(3)).toBe(30)
+  })
+
+  it("returns 60s for second cooldown (6 consecutive failures)", () => {
+    expect(calculatePmBackoff(6)).toBe(60)
+  })
+
+  it("returns 120s for third cooldown (9 consecutive failures)", () => {
+    expect(calculatePmBackoff(9)).toBe(120)
+  })
+
+  it("caps at 300s", () => {
+    expect(calculatePmBackoff(12)).toBe(240)
+    expect(calculatePmBackoff(15)).toBe(300)
+    expect(calculatePmBackoff(18)).toBe(300)
+  })
+
+  it("increases exponentially based on cooldown count", () => {
+    const b1 = calculatePmBackoff(3)
+    const b2 = calculatePmBackoff(6)
+    const b3 = calculatePmBackoff(9)
+    expect(b2).toBe(b1 * 2)
+    expect(b3).toBe(b1 * 4)
+  })
+})
+
+vi.mock("../pm.js", () => ({
+  runPm: vi.fn(),
+  ingestPmTasks: vi.fn(() => []),
+}))
+
+vi.mock("../circuit-breaker.js", () => ({
+  circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn(), canProceed: vi.fn(() => true), getState: vi.fn(() => "closed"), getBackoffSec: vi.fn(() => 1) },
+}))
+
+vi.mock("../ws.js", () => ({
+  broadcast: vi.fn(),
+}))
+
+vi.mock("../db.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db.js")>()
+  return {
+    ...actual,
+    appendLog: vi.fn(),
+  }
+})
+
+describe("PM consecutive failure counter behavior", () => {
+  beforeEach(() => {
+    resetPmConsecutiveFailures()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("クールダウン後に再失敗した場合、カウンタが継続する", async () => {
+    const { runPm } = await import("../pm.js")
+    const mockRunPm = vi.mocked(runPm)
+    mockRunPm.mockRejectedValue(new Error("PM error"))
+
+    // 3回失敗 → クールダウン発火、カウンタは3のまま
+    for (let i = 0; i < 3; i++) {
+      const p = _callPm()
+      await vi.runAllTimersAsync()
+      await p
+    }
+    expect(getSchedulerState().pmConsecutiveFailures).toBe(3)
+
+    // さらに3回失敗 → カウンタは6に継続（0にリセットされない）
+    for (let i = 0; i < 3; i++) {
+      const p = _callPm()
+      await vi.runAllTimersAsync()
+      await p
+    }
+    expect(getSchedulerState().pmConsecutiveFailures).toBe(6)
+  })
+
+  it("バックオフ時間が指数的に増加する", () => {
+    // 3回目のクールダウン: 30s
+    expect(calculatePmBackoff(3)).toBe(30)
+    // 6回目のクールダウン: 60s
+    expect(calculatePmBackoff(6)).toBe(60)
+    // 9回目のクールダウン: 120s
+    expect(calculatePmBackoff(9)).toBe(120)
+    // 上限300sでキャップ
+    expect(calculatePmBackoff(15)).toBe(300)
+    expect(calculatePmBackoff(18)).toBe(300)
+  })
+
+  it("PM成功時にカウンタがリセットされる", async () => {
+    const { runPm } = await import("../pm.js")
+    const mockRunPm = vi.mocked(runPm)
+
+    // まず3回失敗させる
+    mockRunPm.mockRejectedValue(new Error("PM error"))
+    for (let i = 0; i < 3; i++) {
+      const p = _callPm()
+      await vi.runAllTimersAsync()
+      await p
+    }
+    expect(getSchedulerState().pmConsecutiveFailures).toBe(3)
+
+    // 成功 → カウンタが0にリセット
+    mockRunPm.mockResolvedValue({ tasks: [], reasoning: "ok" })
+    await _callPm()
+    expect(getSchedulerState().pmConsecutiveFailures).toBe(0)
   })
 })
