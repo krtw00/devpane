@@ -1,18 +1,34 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, computed, nextTick, ref } from 'vue'
 import { useTaskDetail } from '../composables/useApi'
+import { useSocket, onTaskLog } from '../composables/useSocket'
 
 const props = defineProps<{ id: string }>()
 const { task, logs, refresh } = useTaskDetail(props.id)
+const logStream = ref<HTMLElement | null>(null)
 
-let timer: ReturnType<typeof setInterval>
+useSocket()
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 3000) // poll faster on detail
 })
 
-onUnmounted(() => clearInterval(timer))
+let logIdCounter = 0
+
+onTaskLog(props.id, (payload) => {
+  logs.value.push({
+    id: `ws-${++logIdCounter}`,
+    task_id: props.id,
+    agent: payload.agent,
+    message: payload.message,
+    timestamp: new Date().toISOString(),
+  })
+  nextTick(() => {
+    if (logStream.value) {
+      logStream.value.scrollTop = logStream.value.scrollHeight
+    }
+  })
+})
 
 const facts = computed(() => {
   if (!task.value?.result) return null
@@ -80,7 +96,7 @@ const facts = computed(() => {
 
       <section class="logs">
         <h2>Logs ({{ logs.length }})</h2>
-        <div class="log-stream">
+        <div ref="logStream" class="log-stream">
           <div v-for="log in logs" :key="log.id" class="log-entry">
             <span class="log-time">{{ new Date(log.timestamp).toLocaleTimeString() }}</span>
             <span class="log-agent">[{{ log.agent }}]</span>

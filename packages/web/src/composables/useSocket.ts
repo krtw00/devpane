@@ -71,6 +71,19 @@ export function onWsEvent(type: string, handler: Handler) {
   })
 }
 
+export type TaskLogPayload = {
+  taskId: string
+  agent: string
+  message: string
+}
+
+export function onTaskLog(taskId: string, callback: (payload: TaskLogPayload) => void) {
+  onWsEvent('task:log', (raw) => {
+    const payload = raw as TaskLogPayload
+    if (payload.taskId === taskId) callback(payload)
+  })
+}
+
 export function sendChat(message: string): Promise<unknown> {
   return fetch('/api/chat', {
     method: 'POST',
