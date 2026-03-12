@@ -28,6 +28,20 @@ function buildContent(event: AgentEvent): string | null {
   }
 }
 
+export async function sendDiscordMessage(content: string): Promise<void> {
+  if (!WEBHOOK_URL) return
+
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    })
+  } catch (err) {
+    console.warn(`[discord] webhook failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 export async function notify(event: AgentEvent): Promise<void> {
   if (!WEBHOOK_URL) return
 

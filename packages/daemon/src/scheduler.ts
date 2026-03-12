@@ -12,6 +12,7 @@ import { runGate1 } from "./gate1.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { circuitBreaker } from "./circuit-breaker.js"
+import { runPrAgent } from "./pr-agent.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -57,6 +58,7 @@ export function resumeScheduler(): void {
 
 export function stopScheduler(): void {
   alive = false
+  stopDailyReportTimer()
 }
 
 async function callPm(): Promise<Task[]> {
@@ -251,6 +253,34 @@ async function executeTask(task: Task): Promise<void> {
   }
 }
 
+const DAILY_REPORT_HOUR = Number(process.env.DAILY_REPORT_HOUR ?? "9")
+let dailyReportTimer: ReturnType<typeof setInterval> | null = null
+
+function startDailyReportTimer(): void {
+  // Check every 60s if it's time to send the daily report
+  let lastReportDate = ""
+  dailyReportTimer = setInterval(() => {
+    const now = new Date()
+    // JST = UTC+9
+    const jstHour = (now.getUTCHours() + 9) % 24
+    const jstDate = now.toISOString().slice(0, 10)
+
+    if (jstHour === DAILY_REPORT_HOUR && lastReportDate !== jstDate) {
+      lastReportDate = jstDate
+      runPrAgent().catch((err) => {
+        console.error(`[scheduler] daily PR report failed: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    }
+  }, 60_000)
+}
+
+function stopDailyReportTimer(): void {
+  if (dailyReportTimer) {
+    clearInterval(dailyReportTimer)
+    dailyReportTimer = null
+  }
+}
+
 function recoverOrphanTasks(): void {
   const orphans = getTasksByStatus("running")
   if (orphans.length === 0) return
@@ -267,6 +297,7 @@ export async function startScheduler(): Promise<void> {
   alive = true
   pruneWorktrees()
   recoverOrphanTasks()
+  startDailyReportTimer()
 
   while (alive) {
     // Pause: 一時停止中はスリープしてスキップ
