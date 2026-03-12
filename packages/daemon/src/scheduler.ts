@@ -5,8 +5,9 @@ import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDel
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
+import { runGate1 } from "./gate1.js"
 import { broadcast } from "./ws.js"
-import { remember, forget, findSimilar } from "./memory.js"
+import { recall, remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
@@ -64,7 +65,29 @@ async function callPm(): Promise<Task[]> {
     const output = await runPm()
     pmConsecutiveFailures = 0
     clearRateLimit()
-    const tasks = ingestPmTasks(output)
+
+    // Gate 1: PMタスクの事前フィルタリング
+    const memories = recall()
+    const accepted = []
+    for (const spec of output.tasks) {
+      const gate1 = runGate1(spec, memories)
+      if (gate1.verdict === "kill") {
+        console.log(`[scheduler] Gate 1 KILL: ${spec.title} — ${gate1.reasons.join("; ")}`)
+        remember("lesson", `Gate1 killed "${spec.title}": ${gate1.reasons.join("; ")}`)
+      } else if (gate1.verdict === "recycle") {
+        console.log(`[scheduler] Gate 1 RECYCLE: ${spec.title} — ${gate1.reasons.join("; ")}`)
+        appendLog("scheduler", "gate1", `[recycle] ${spec.title}: ${gate1.reasons.join("; ")}`)
+      } else {
+        accepted.push(spec)
+      }
+    }
+
+    if (accepted.length === 0) {
+      console.log("[scheduler] Gate 1 filtered all PM tasks")
+      return []
+    }
+
+    const tasks = ingestPmTasks({ tasks: accepted, reasoning: output.reasoning })
     for (const t of tasks) {
       emit({ type: "task.created", taskId: t.id, by: "pm" })
     }
