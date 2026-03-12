@@ -27,6 +27,11 @@ export const config: Config = {
   MAX_DIFF_SIZE: Number(env("DEVPANE_MAX_DIFF_SIZE", "500")),
   PR_RISK_DIFF_THRESHOLD: Number(env("PR_RISK_DIFF_THRESHOLD", "300")),
   ACTIVE_HOURS: parseActiveHours(process.env.ACTIVE_HOURS),
+  MAX_OPEN_PRS: Number(env("DEVPANE_MAX_OPEN_PRS", "1")),
+  MIN_DESCRIPTION_LENGTH: Number(env("DEVPANE_MIN_DESCRIPTION_LENGTH", "20")),
+  EFFECT_MEASURE_THRESHOLD: Number(env("DEVPANE_EFFECT_MEASURE_THRESHOLD", "10")),
+  KAIZEN_THRESHOLD: Number(env("DEVPANE_KAIZEN_THRESHOLD", "10")),
+  MEMORY_CLEANUP_THRESHOLD: Number(env("DEVPANE_MEMORY_CLEANUP_THRESHOLD", "10")),
 }
 
 function parseActiveHours(value: string | undefined): ActiveHours | null {

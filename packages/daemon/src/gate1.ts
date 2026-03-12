@@ -14,7 +14,6 @@ export type Gate1Result = {
   reasons: string[]
 }
 
-const MIN_DESCRIPTION_LENGTH = 20
 const GATE1_TIMEOUT_MS = 60000
 
 // Phase 1: ルールベース（高速・無料）
@@ -28,8 +27,8 @@ export function runGate1Rules(task: Task): Gate1Result {
     return { verdict: "kill", reasons }
   }
 
-  if (!task.description || task.description.length < MIN_DESCRIPTION_LENGTH) {
-    reasons.push(`description too short (${task.description?.length ?? 0} chars, min ${MIN_DESCRIPTION_LENGTH})`)
+  if (!task.description || task.description.length < config.MIN_DESCRIPTION_LENGTH) {
+    reasons.push(`description too short (${task.description?.length ?? 0} chars, min ${config.MIN_DESCRIPTION_LENGTH})`)
   }
 
   const doneTitles = getAllDoneTitles()
