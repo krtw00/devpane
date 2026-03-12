@@ -4,7 +4,7 @@ import { join } from "node:path"
 import type { Task, Memory, PmOutput } from "@devpane/shared"
 import { PmOutputSchema } from "@devpane/shared/schemas"
 import { config } from "./config.js"
-import { getRecentDone, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
+import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
 import { recall } from "./memory.js"
 
 const activeProcs = new Set<ChildProcess>()
@@ -63,6 +63,7 @@ type PmContext = {
   readme: string
   vision: string
   recentDone: Task[]
+  allDoneTitles: string[]
   failedTasks: Task[]
   pendingTasks: Task[]
   memories: Memory[]
@@ -127,6 +128,11 @@ function buildPmPrompt(context: PmContext): string {
       ? context.recentDone.map(t => `- [done] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
       : "（なし）",
     "",
+    "## 全完了タスク一覧（重複生成禁止）",
+    context.allDoneTitles.length > 0
+      ? context.allDoneTitles.map(t => `- ${t}`).join("\n")
+      : "（なし）",
+    "",
     "## 失敗タスク（未解決）",
     context.failedTasks.length > 0
       ? context.failedTasks.map(t => `- [failed] ${t.title}: exit ${JSON.parse(t.result ?? "{}").exit_code ?? "?"}`).join("\n")
@@ -141,8 +147,13 @@ function buildPmPrompt(context: PmContext): string {
     ...formatMemories(context.memories),
     "",
     "上記を踏まえ、次に実装すべきタスクを優先度順に生成せよ。",
+    "",
+    "【重複禁止ルール（厳守）】",
+    "- 「全完了タスク一覧」「現在のキュー」「プロジェクト記憶の実装済み機能」に含まれる機能と同一・類似のタスクは絶対に生成しないこと。",
+    "- タイトルが異なっても機能的に同じものは重複とみなす。",
+    "- 違反した場合、タスクは自動却下される。",
+    "",
     "既に実装済みの機能を壊したり削除するタスクは生成しないこと。",
-    "既にpendingのタスクと重複しないこと。",
     "各タスクのdescriptionは、Workerが単独で実装できる具体的な指示にすること。",
     "",
     "以下のJSON形式のみで回答せよ（説明文は不要）:",
@@ -182,6 +193,7 @@ export async function runPm(): Promise<PmOutput> {
     readme: readFileOr(join(config.PROJECT_ROOT, "README.md"), ""),
     vision: readFileOr(join(config.PROJECT_ROOT, "docs", "vision.md"), ""),
     recentDone: getRecentDone(5),
+    allDoneTitles: getAllDoneTitles(),
     failedTasks: getFailedTasks(),
     pendingTasks: getTasksByStatus("pending"),
     memories: recall(),
@@ -201,11 +213,30 @@ export async function runPm(): Promise<PmOutput> {
   return output
 }
 
+export function isDuplicate(newTitle: string, existingTitles: string[]): boolean {
+  const normalize = (s: string) => s.toLowerCase().replace(/[\s\-_（）()「」:：・]/g, "")
+  const norm = normalize(newTitle)
+  return existingTitles.some(t => {
+    const nt = normalize(t)
+    // 完全一致 or 一方が他方を含む
+    return norm === nt || norm.includes(nt) || nt.includes(norm)
+  })
+}
+
 export function ingestPmTasks(output: PmOutput): Task[] {
+  const doneTitles = getAllDoneTitles()
+  const pendingTitles = getTasksByStatus("pending").map(t => t.title)
+  const existingTitles = [...doneTitles, ...pendingTitles]
+
   const created: Task[] = []
   for (const t of output.tasks) {
+    if (isDuplicate(t.title, existingTitles)) {
+      console.log(`[pm] skipped duplicate task: ${t.title}`)
+      continue
+    }
     const task = createTask(t.title, t.description, "pm", t.priority, null, t.constraints ?? null)
     created.push(task)
+    existingTitles.push(t.title)
   }
   return created
 }

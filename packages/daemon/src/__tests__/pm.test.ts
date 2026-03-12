@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parsePmOutput } from "../pm.js"
+import { parsePmOutput, isDuplicate } from "../pm.js"
 
 describe("parsePmOutput", () => {
   it("parses direct JSON output", () => {
@@ -62,5 +62,37 @@ describe("parsePmOutput", () => {
     const result = parsePmOutput(cliOutput)
     expect(result.tasks).toHaveLength(1)
     expect(result.tasks[0].title).toBe("T1")
+  })
+})
+
+describe("isDuplicate", () => {
+  const existing = [
+    "スケジューラ制御APIとメモリ管理API",
+    "Gate 1 方針チェックの実装",
+    "SPC管理図APIとメトリクスダッシュボードUI",
+  ]
+
+  it("detects exact match", () => {
+    expect(isDuplicate("Gate 1 方針チェックの実装", existing)).toBe(true)
+  })
+
+  it("detects match ignoring whitespace and symbols", () => {
+    expect(isDuplicate("Gate1方針チェックの実装", existing)).toBe(true)
+  })
+
+  it("detects substring match (new contains existing)", () => {
+    expect(isDuplicate("SPC管理図APIとメトリクスダッシュボードUIの改善", existing)).toBe(true)
+  })
+
+  it("detects substring match (existing contains new)", () => {
+    expect(isDuplicate("スケジューラ制御API", existing)).toBe(true)
+  })
+
+  it("allows genuinely new tasks", () => {
+    expect(isDuplicate("Discord Webhook通知の実装", existing)).toBe(false)
+  })
+
+  it("handles empty existing list", () => {
+    expect(isDuplicate("何でもいい", [])).toBe(false)
   })
 })

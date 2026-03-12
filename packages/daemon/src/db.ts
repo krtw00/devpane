@@ -24,6 +24,7 @@ function prepareStatements(db: Database.Database) {
     getAllTasks: db.prepare(`SELECT * FROM tasks ORDER BY created_at DESC`),
     getTasksByStatus: db.prepare(`SELECT * FROM tasks WHERE status = ? ORDER BY priority DESC, created_at ASC`),
     getRecentDone: db.prepare(`SELECT * FROM tasks WHERE status = 'done' ORDER BY finished_at DESC LIMIT ?`),
+    getAllDoneTitles: db.prepare(`SELECT title FROM tasks WHERE status = 'done' ORDER BY finished_at DESC`),
     getFailedTasks: db.prepare(`SELECT * FROM tasks WHERE status = 'failed' ORDER BY finished_at DESC`),
     startTask: db.prepare(`UPDATE tasks SET status = 'running', started_at = ?, assigned_to = ? WHERE id = ?`),
     finishTask: db.prepare(`UPDATE tasks SET status = ?, finished_at = ?, result = ? WHERE id = ?`),
@@ -135,6 +136,11 @@ export function getTasksByStatus(status: TaskStatus): Task[] {
 export function getRecentDone(limit = 5): Task[] {
   getDb()
   return stmts.getRecentDone.all(limit) as Task[]
+}
+
+export function getAllDoneTitles(): string[] {
+  getDb()
+  return (stmts.getAllDoneTitles.all() as { title: string }[]).map(r => r.title)
 }
 
 export function getFailedTasks(): Task[] {
