@@ -46,6 +46,7 @@ let alive = true
 let paused = false
 let rateLimitHits = 0
 let pmConsecutiveFailures = 0
+let currentTaskPromise: Promise<void> | null = null
 
 // Re-export from scheduler-plugins for backward compatibility
 export { EFFECT_MEASURE_THRESHOLD, checkEffectMeasurement, resetEffectMeasureCounter, setEffectMeasureCounter, getEffectMeasureCounter } from "./scheduler-plugins.js"
@@ -64,9 +65,25 @@ export function resumeScheduler(): void {
   paused = false
 }
 
-export function stopScheduler(): void {
+const SHUTDOWN_TIMEOUT_MS = 30_000
+
+export async function stopScheduler(): Promise<void> {
   alive = false
   stopDailyReportTimer()
+
+  if (currentTaskPromise) {
+    await Promise.race([
+      currentTaskPromise,
+      sleep(SHUTDOWN_TIMEOUT_MS),
+    ])
+    currentTaskPromise = null
+  }
+
+  // Revert any remaining running tasks to pending
+  const remaining = getTasksByStatus("running")
+  for (const t of remaining) {
+    revertToPending(t.id)
+  }
 }
 
 async function callPm(): Promise<Task[]> {
@@ -398,7 +415,9 @@ export async function startScheduler(): Promise<void> {
     }
 
     // 3. Execute the task
-    await executeTask(task)
+    currentTaskPromise = executeTask(task)
+    await currentTaskPromise
+    currentTaskPromise = null
 
     // 4. Brief pause between tasks to avoid hammering
     await sleep(1000)
