@@ -1,18 +1,41 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
-import { useTaskDetail } from '../composables/useApi'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
+import { useTaskDetail, cancelTask, retryTask } from '../composables/useApi'
 
 const props = defineProps<{ id: string }>()
 const { task, logs, refresh } = useTaskDetail(props.id)
+const actionLoading = ref(false)
 
 let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 3000) // poll faster on detail
+  timer = setInterval(refresh, 3000)
 })
 
 onUnmounted(() => clearInterval(timer))
+
+async function handleCancel() {
+  if (!task.value || actionLoading.value) return
+  actionLoading.value = true
+  try {
+    await cancelTask(task.value.id)
+    await refresh()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function handleRetry() {
+  if (!task.value || actionLoading.value) return
+  actionLoading.value = true
+  try {
+    await retryTask(task.value.id)
+    await refresh()
+  } finally {
+    actionLoading.value = false
+  }
+}
 
 const facts = computed(() => {
   if (!task.value?.result) return null
@@ -34,6 +57,18 @@ const facts = computed(() => {
         <span :class="['badge', `badge-${task.status}`]">{{ task.status }}</span>
         <span>by {{ task.created_by }}</span>
         <span v-if="task.assigned_to">on {{ task.assigned_to }}</span>
+        <button
+          v-if="task.status === 'running'"
+          class="action-btn cancel-btn"
+          :disabled="actionLoading"
+          @click="handleCancel"
+        >cancel</button>
+        <button
+          v-if="task.status === 'failed'"
+          class="action-btn retry-btn"
+          :disabled="actionLoading"
+          @click="handleRetry"
+        >retry</button>
       </div>
 
       <section class="description">
@@ -250,5 +285,32 @@ details ul {
 .failure-label {
   color: #8b949e;
   margin-right: 0.25rem;
+}
+
+.action-btn {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  background: #f85149;
+  color: #f0f6fc;
+  border-color: #f85149;
+}
+
+.retry-btn {
+  background: #d29922;
+  color: #0d1117;
+  border-color: #d29922;
 }
 </style>

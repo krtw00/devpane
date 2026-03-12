@@ -92,6 +92,20 @@ export type SpcMetric = {
   recorded_at: string
 }
 
+// Cancel response
+export type CancelResponse = {
+  id: string
+  status: "failed"
+  message: string
+}
+
+// Retry response
+export type RetryResponse = {
+  id: string
+  status: "pending"
+  message: string
+}
+
 // Config
 export type Config = {
   PROJECT_ROOT: string

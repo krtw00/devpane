@@ -82,6 +82,18 @@ export async function fetchEvents(limit = 100, type?: string): Promise<AgentEven
   return fetchJson<AgentEvent[]>(`/events?${params}`)
 }
 
+export async function cancelTask(id: string): Promise<{ id: string; status: string; message: string }> {
+  const res = await fetch(`${BASE}/tasks/${id}/cancel`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+export async function retryTask(id: string): Promise<{ id: string; status: string; message: string }> {
+  const res = await fetch(`${BASE}/tasks/${id}/retry`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])

@@ -15,11 +15,22 @@ export type WorkerResult = {
 // Track active child processes for cleanup on shutdown
 const activeProcs = new Set<ChildProcess>()
 
+// Track child processes by task ID for cancel support
+const taskProcs = new Map<string, ChildProcess>()
+
 export function killAllWorkers(): void {
   for (const proc of activeProcs) {
     proc.kill("SIGTERM")
   }
   activeProcs.clear()
+  taskProcs.clear()
+}
+
+export function killWorkerByTaskId(taskId: string): boolean {
+  const proc = taskProcs.get(taskId)
+  if (!proc) return false
+  proc.kill("SIGTERM")
+  return true
 }
 
 export function runWorker(task: Task, worktreePath: string): Promise<WorkerResult> {
@@ -52,6 +63,7 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
     })
 
     activeProcs.add(proc)
+    taskProcs.set(task.id, proc)
 
     let resultText = ""
     let costUsd = 0
@@ -113,6 +125,7 @@ export function runWorker(task: Task, worktreePath: string): Promise<WorkerResul
 
     proc.on("close", (code) => {
       activeProcs.delete(proc)
+      taskProcs.delete(task.id)
       clearInterval(idleCheck)
       rl.close()
       if (stderr) {
