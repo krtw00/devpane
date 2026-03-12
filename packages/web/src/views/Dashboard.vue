@@ -196,7 +196,6 @@ function timeAgo(iso: string | null): string {
         </div>
         <nav class="nav-links">
           <router-link to="/" class="active">Dashboard</router-link>
-          <router-link to="/cost">Cost</router-link>
           <router-link to="/events">Events</router-link>
           <router-link to="/memories">Memories</router-link>
         </nav>
