@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 import { readFileSync, readdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
+import type { Task, TaskLog, TaskStatus, TaskCreator, Improvement } from "@devpane/shared"
 import { config } from "./config.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -35,6 +35,9 @@ function prepareStatements(db: Database.Database) {
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
     `),
     getTaskLogs: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC`),
+    getAllImprovements: db.prepare(`SELECT * FROM improvements ORDER BY applied_at DESC`),
+    getImprovementsByStatus: db.prepare(`SELECT * FROM improvements WHERE status = ? ORDER BY applied_at DESC`),
+    getImprovement: db.prepare(`SELECT * FROM improvements WHERE id = ?`),
   }
 }
 
@@ -183,6 +186,19 @@ export function appendLog(taskId: string, agent: string, message: string): void 
 export function getTaskLogs(taskId: string): TaskLog[] {
   getDb()
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
+}
+
+export function getImprovements(status?: string): Improvement[] {
+  getDb()
+  if (status) {
+    return stmts.getImprovementsByStatus.all(status) as Improvement[]
+  }
+  return stmts.getAllImprovements.all() as Improvement[]
+}
+
+export function getImprovement(id: string): Improvement | undefined {
+  getDb()
+  return stmts.getImprovement.get(id) as Improvement | undefined
 }
 
 export function getCostStats() {
