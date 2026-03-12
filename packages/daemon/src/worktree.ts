@@ -111,7 +111,6 @@ export function autoMergePr(taskId: string): boolean {
     execFileSync("gh", [
       "pr", "merge", branch,
       "--merge",
-      "--delete-branch",
     ], { cwd: config.PROJECT_ROOT, encoding: "utf-8", timeout: 30000 })
     return true
   } catch (err) {
