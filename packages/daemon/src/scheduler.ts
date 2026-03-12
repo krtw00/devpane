@@ -7,9 +7,12 @@ import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
 import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
-import { emit } from "./events.js"
+import { emit, safeEmit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { runWhyWhyAnalysis } from "./whywhy.js"
+import { snapshotBeforeMetrics, measureEffect } from "./effect-measure.js"
+import { insertImprovement, updateImprovementStatus, getActiveImprovements } from "./db.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -33,6 +36,8 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+let completedTaskCount = 0
+let lastAnalysisAt = 0 // completedTaskCount at last analysis
 
 export function stopScheduler(): void {
   alive = false
@@ -152,6 +157,9 @@ async function executeTask(task: Task): Promise<void> {
       broadcast("task:updated", { id: task.id, status: "done", result: facts })
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
+      completedTaskCount++
+      onTaskCompleted()
+
       // PR作成
       if (facts.commit_hash) {
         const { added, deleted } = getWorktreeNewAndDeleted(task.id)
@@ -235,6 +243,43 @@ function recoverOrphanTasks(): void {
     revertToPending(t.id)
     appendLog(t.id, "system", "[recovery] reverted to pending on daemon restart")
   }
+}
+
+const ANALYSIS_INTERVAL = 10
+
+function onTaskCompleted(): void {
+  const sinceLastAnalysis = completedTaskCount - lastAnalysisAt
+  if (sinceLastAnalysis < ANALYSIS_INTERVAL) return
+
+  // 既存 active improvements があれば効果測定を先に実行
+  const active = getActiveImprovements()
+  for (const imp of active) {
+    const { verdict, afterMetrics } = measureEffect(imp.id)
+    const newStatus = verdict === "effective" ? "permanent" as const : "reverted" as const
+    updateImprovementStatus(imp.id, newStatus, afterMetrics, verdict)
+
+    if (newStatus === "permanent") {
+      safeEmit({ type: "improvement.applied", improvementId: imp.id, target: imp.target })
+      console.log(`[scheduler] improvement ${imp.id} → permanent (${verdict})`)
+    } else {
+      safeEmit({ type: "improvement.reverted", improvementId: imp.id, reason: verdict })
+      console.log(`[scheduler] improvement ${imp.id} → reverted (${verdict})`)
+    }
+  }
+
+  // なぜなぜ分析を実行
+  const analysis = runWhyWhyAnalysis()
+  if (analysis) {
+    const beforeMetrics = snapshotBeforeMetrics()
+    for (const action of analysis.improvements) {
+      const id = `imp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      insertImprovement(id, JSON.stringify(analysis.analysis), action.target, action.description, beforeMetrics)
+      safeEmit({ type: "improvement.applied", improvementId: id, target: action.target })
+      console.log(`[scheduler] improvement applied: ${action.target} — ${action.description}`)
+    }
+  }
+
+  lastAnalysisAt = completedTaskCount
 }
 
 export async function startScheduler(): Promise<void> {

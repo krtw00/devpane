@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 import { readFileSync, readdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
+import type { Task, TaskLog, TaskStatus, TaskCreator, Improvement } from "@devpane/shared"
 import { config } from "./config.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -35,6 +35,12 @@ function prepareStatements(db: Database.Database) {
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
     `),
     getTaskLogs: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC`),
+    insertImprovement: db.prepare(`
+      INSERT INTO improvements (id, trigger_analysis, target, action, applied_at, status, before_metrics)
+      VALUES (?, ?, ?, ?, ?, 'active', ?)
+    `),
+    updateImprovementStatus: db.prepare(`UPDATE improvements SET status = ?, after_metrics = ?, verdict = ? WHERE id = ?`),
+    getActiveImprovements: db.prepare(`SELECT * FROM improvements WHERE status = 'active' ORDER BY applied_at DESC`),
   }
 }
 
@@ -183,6 +189,32 @@ export function appendLog(taskId: string, agent: string, message: string): void 
 export function getTaskLogs(taskId: string): TaskLog[] {
   getDb()
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
+}
+
+export function insertImprovement(
+  id: string,
+  triggerAnalysis: string,
+  target: string,
+  action: string,
+  beforeMetrics: string | null,
+): void {
+  getDb()
+  stmts.insertImprovement.run(id, triggerAnalysis, target, action, new Date().toISOString(), beforeMetrics)
+}
+
+export function updateImprovementStatus(
+  id: string,
+  status: "permanent" | "reverted",
+  afterMetrics: string | null,
+  verdict: string | null,
+): void {
+  getDb()
+  stmts.updateImprovementStatus.run(status, afterMetrics, verdict, id)
+}
+
+export function getActiveImprovements(): Improvement[] {
+  getDb()
+  return stmts.getActiveImprovements.all() as Improvement[]
 }
 
 export function getCostStats() {
