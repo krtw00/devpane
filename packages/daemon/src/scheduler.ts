@@ -1,4 +1,4 @@
-import type { Task, PmOutput } from "@devpane/shared"
+import type { ActiveHours, Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, autoMergePr, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
@@ -54,6 +54,17 @@ const RATE_LIMIT_PATTERNS = [
 
 export function isRateLimitError(message: string): boolean {
   return RATE_LIMIT_PATTERNS.some(p => p.test(message))
+}
+
+export function isWithinActiveHours(hours: ActiveHours | null): boolean {
+  if (!hours) return true
+  const now = new Date().getHours()
+  if (hours.start === hours.end) return false
+  if (hours.start < hours.end) {
+    return now >= hours.start && now < hours.end
+  }
+  // 日跨ぎ: start > end (e.g. 22-08)
+  return now >= hours.start || now < hours.end
 }
 
 let alive = true

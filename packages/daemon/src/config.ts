@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import type { Config } from "@devpane/shared"
+import type { ActiveHours, Config } from "@devpane/shared"
 
 function env(key: string, fallback: string): string {
   return process.env[key] ?? fallback
@@ -25,4 +25,15 @@ export const config: Config = {
   API_PORT: Number(env("API_PORT", "3001")),
   MAX_RETRIES: Number(env("DEVPANE_MAX_RETRIES", "2")),
   MAX_DIFF_SIZE: Number(env("DEVPANE_MAX_DIFF_SIZE", "500")),
+  ACTIVE_HOURS: parseActiveHours(process.env.ACTIVE_HOURS),
+}
+
+function parseActiveHours(value: string | undefined): ActiveHours | null {
+  if (!value) return null
+  const match = value.match(/^(\d{1,2})-(\d{1,2})$/)
+  if (!match) return null
+  const start = Number(match[1])
+  const end = Number(match[2])
+  if (start < 0 || start > 23 || end < 0 || end > 23) return null
+  return { start, end }
 }
