@@ -117,6 +117,7 @@ const mockConfig = {
   API_PORT: 3001,
   MAX_RETRIES: 2,
   MAX_DIFF_SIZE: 500,
+  MAX_OPEN_PRS: 1,
   ACTIVE_HOURS: null as { start: number; end: number } | null,
 }
 
