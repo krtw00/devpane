@@ -10,6 +10,8 @@ function prepareStmt() {
   return {
     insert: db.prepare(`INSERT INTO spc_metrics (id, task_id, metric, value, recorded_at) VALUES (?, ?, ?, ?, ?)`),
     recentByMetric: db.prepare(`SELECT value FROM spc_metrics WHERE metric = ? ORDER BY recorded_at DESC LIMIT ?`),
+    metricsList: db.prepare(`SELECT id, task_id, metric, value, recorded_at FROM spc_metrics WHERE metric = ? ORDER BY recorded_at DESC LIMIT ?`),
+    metricsAll: db.prepare(`SELECT id, task_id, metric, value, recorded_at FROM spc_metrics ORDER BY recorded_at DESC LIMIT ?`),
   }
 }
 
@@ -99,6 +101,43 @@ export function checkMetric(metric: string, currentValue: number): SpcCheck | nu
   }
 
   return check
+}
+
+export type SpcMetricRow = {
+  id: string
+  task_id: string
+  metric: string
+  value: number
+  recorded_at: string
+}
+
+export function getMetrics(metric: string | undefined, limit: number): SpcMetricRow[] {
+  const s = getStmt()
+  if (metric) {
+    return s.metricsList.all(metric, limit) as SpcMetricRow[]
+  }
+  return s.metricsAll.all(limit) as SpcMetricRow[]
+}
+
+export type ControlChart = {
+  metric: string
+  values: number[]
+  mean: number
+  ucl: number
+  lcl: number
+}
+
+export function getControlChart(metric: string): ControlChart | null {
+  const values = getRecentValues(metric)
+  const stats = calcStats(values)
+  if (!stats) return null
+  return {
+    metric,
+    values,
+    mean: stats.mean,
+    ucl: stats.mean + 3 * stats.stddev,
+    lcl: Math.max(0, stats.mean - 3 * stats.stddev),
+  }
 }
 
 export function checkAllMetrics(_taskId: string, costUsd: number, executionMs: number, diffSize: number): SpcCheck[] {
