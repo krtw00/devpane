@@ -153,6 +153,15 @@ export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; del
   }
 }
 
+export function pullMain(): void {
+  try {
+    git("pull", "--ff-only", "origin", "main")
+    console.log("[worktree] pulled latest main")
+  } catch (err) {
+    console.warn(`[worktree] pull main failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 export function countOpenPrs(): number {
   try {
     const result = execFileSync("gh", ["pr", "list", "--state", "open", "--json", "number"], {

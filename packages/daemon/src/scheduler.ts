@@ -1,22 +1,21 @@
 import type { Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
-import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees, countOpenPrs } from "./worktree.js"
+import { createWorktree, removeWorktree, createPullRequest, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
 import { broadcast } from "./ws.js"
-import { remember, forget, findSimilar } from "./memory.js"
-import { emit, safeEmit } from "./events.js"
+import { emit } from "./events.js"
 import { runGate1 } from "./gate1.js"
 import { runGate2 } from "./gate2.js"
 import { runGate3 } from "./gate.js"
 import { runTester } from "./tester.js"
-import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { circuitBreaker } from "./circuit-breaker.js"
 import { runPrAgent } from "./pr-agent.js"
-import { getActiveImprovements } from "./db.js"
-import { measureAllActive } from "./effect-measure.js"
+import { runHooks, type TaskCompletedData } from "./scheduler-hooks.js"
+// Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
+import "./scheduler-plugins.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -47,29 +46,13 @@ let alive = true
 let paused = false
 let rateLimitHits = 0
 let pmConsecutiveFailures = 0
-let taskCompletionsSinceLastMeasure = 0
 
-export const EFFECT_MEASURE_THRESHOLD = 10
-
-export function checkEffectMeasurement(): void {
-  const actives = getActiveImprovements()
-  if (actives.length === 0) {
-    taskCompletionsSinceLastMeasure = 0
-    return
-  }
-
-  if (taskCompletionsSinceLastMeasure < EFFECT_MEASURE_THRESHOLD) return
-
-  taskCompletionsSinceLastMeasure = 0
-  console.log(`[scheduler] running effect measurement for ${actives.length} active improvements`)
-  const results = measureAllActive()
-  for (const r of results) {
-    console.log(`[scheduler] improvement ${r.improvementId}: ${r.verdict} (${(r.beforeFailureRate * 100).toFixed(1)}% → ${(r.afterFailureRate * 100).toFixed(1)}%)`)
-  }
-}
+// Re-export from scheduler-plugins for backward compatibility
+export { EFFECT_MEASURE_THRESHOLD, checkEffectMeasurement, resetEffectMeasureCounter, setEffectMeasureCounter, getEffectMeasureCounter } from "./scheduler-plugins.js"
+import { getEffectMeasureCounter } from "./scheduler-plugins.js"
 
 export function getSchedulerState() {
-  return { alive, rateLimitHits, pmConsecutiveFailures, taskCompletionsSinceLastMeasure }
+  return { alive, rateLimitHits, pmConsecutiveFailures, taskCompletionsSinceLastMeasure: getEffectMeasureCounter() }
 }
 
 export function pauseScheduler(): void {
@@ -83,14 +66,6 @@ export function resumeScheduler(): void {
 export function stopScheduler(): void {
   alive = false
   stopDailyReportTimer()
-}
-
-export function resetEffectMeasureCounter(): void {
-  taskCompletionsSinceLastMeasure = 0
-}
-
-export function setEffectMeasureCounter(n: number): void {
-  taskCompletionsSinceLastMeasure = n
 }
 
 async function callPm(): Promise<Task[]> {
@@ -250,59 +225,36 @@ async function executeTask(task: Task): Promise<void> {
       finishTask(task.id, "done", JSON.stringify(facts))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
 
-      // SPC: メトリクス記録 + 管理図チェック
-      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
-      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
-      const spcAlerts = checkAllMetrics(task.id, result.cost_usd, executionMs, diffSize)
-      for (const alert of spcAlerts) {
-        if (alert.alert) {
-          safeEmit({ type: "spc.alert", metric: alert.metric, value: alert.value, ucl: alert.ucl })
-          console.warn(`[scheduler] SPC alert: ${alert.metric} = ${alert.value.toFixed(4)} (UCL: ${alert.ucl.toFixed(4)}) — ${alert.reason}`)
-        }
-      }
-
       emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
       broadcast("task:updated", { id: task.id, status: "done", result: facts })
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
       // PR作成
+      let prUrl: string | null = null
       if (facts.commit_hash) {
-        const { added, deleted } = getWorktreeNewAndDeleted(task.id)
-        const prUrl = createPullRequest(task.id, task.title, facts)
+        prUrl = createPullRequest(task.id, task.title, facts)
         if (prUrl) {
           console.log(`[scheduler] PR created for task ${task.id}: ${prUrl}`)
           appendLog(task.id, "system", `[pr] ${prUrl}`)
           emit({ type: "pr.created", taskId: task.id, url: prUrl })
-
-          for (const file of added) {
-            remember("feature", `${file} を追加（${task.title}）`, task.id)
-          }
-          for (const file of deleted) {
-            const existing = findSimilar("feature", file)
-            for (const m of existing) forget(m.id)
-          }
-
-          // 構造化仕様のconstraints → decision記憶
-          const constraints = parseConstraints(task.constraints)
-          for (const c of constraints) {
-            remember("decision", c, task.id)
-          }
-
-          const memoryCount = added.length + constraints.length
-          if (memoryCount > 0 || deleted.length > 0) {
-            console.log(`[scheduler] memory: +${added.length} features, +${constraints.length} decisions, -${deleted.length} forgotten`)
-          }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)
         }
       }
+
+      // Run registered post-task hooks (SPC, memory, effect measurement)
+      const hookData: TaskCompletedData = {
+        task,
+        costUsd: result.cost_usd,
+        numTurns: result.num_turns,
+        executionMs,
+        facts,
+        prUrl,
+      }
+      await runHooks("task.completed", hookData)
     }
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
-
-    // 効果測定: タスク完了カウンターをインクリメント
-    taskCompletionsSinceLastMeasure++
-    checkEffectMeasurement()
 
     if (isRateLimitError(result.result_text)) {
       rateLimitHits++
@@ -403,14 +355,16 @@ export async function startScheduler(): Promise<void> {
       continue
     }
 
-    // WIP制限: 未マージPR数が上限以上ならスキップ
-    const MAX_OPEN_PRS = 5
+    // WIP制限: 直列実行（WIP=1）— PRマージ後にmain pullしてから次タスク
+    const MAX_OPEN_PRS = 1
     const openPrs = countOpenPrs()
     if (openPrs >= MAX_OPEN_PRS) {
       console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${MAX_OPEN_PRS}), waiting...`)
       await sleep(config.IDLE_INTERVAL_SEC * 1000)
       continue
     }
+    // PRがなくなった = マージされた → mainを最新化してコンフリクト防止
+    pullMain()
 
     // 1. Check for pending tasks
     let task = getNextPending()
