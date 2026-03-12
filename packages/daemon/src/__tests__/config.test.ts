@@ -30,4 +30,17 @@ describe("config env overrides", () => {
     expect(config.MAX_DIFF_SIZE).toBe(1000)
     vi.unstubAllEnvs()
   })
+
+  it("uses default MAX_OPEN_PRS=1 when env not set", async () => {
+    delete process.env.MAX_OPEN_PRS
+    const { config } = await vi.importActual<typeof import("../config.js")>("../config.js")
+    expect(config.MAX_OPEN_PRS).toBe(1)
+  })
+
+  it("overrides MAX_OPEN_PRS from MAX_OPEN_PRS env", async () => {
+    vi.stubEnv("MAX_OPEN_PRS", "3")
+    const { config } = await vi.importActual<typeof import("../config.js")>("../config.js")
+    expect(config.MAX_OPEN_PRS).toBe(3)
+    vi.unstubAllEnvs()
+  })
 })

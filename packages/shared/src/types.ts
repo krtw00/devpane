@@ -111,5 +111,6 @@ export type Config = {
   API_PORT: number
   MAX_RETRIES: number
   MAX_DIFF_SIZE: number
+  MAX_OPEN_PRS: number
   ACTIVE_HOURS: ActiveHours | null
 }

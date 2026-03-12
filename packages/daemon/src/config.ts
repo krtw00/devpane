@@ -25,6 +25,7 @@ export const config: Config = {
   API_PORT: Number(env("API_PORT", "3001")),
   MAX_RETRIES: Number(env("DEVPANE_MAX_RETRIES", "2")),
   MAX_DIFF_SIZE: Number(env("DEVPANE_MAX_DIFF_SIZE", "500")),
+  MAX_OPEN_PRS: Number(env("MAX_OPEN_PRS", "1")),
   ACTIVE_HOURS: parseActiveHours(process.env.ACTIVE_HOURS),
 }
 
