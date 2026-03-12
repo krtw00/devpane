@@ -1,7 +1,7 @@
 import type { Task } from "@devpane/shared"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
-import { getAllDoneTitles } from "./db.js"
+import { getAllDoneTitles, getRetryCount } from "./db.js"
 import { recall } from "./memory.js"
 import { isDuplicate } from "./pm.js"
 import { emit } from "./events.js"
@@ -15,11 +15,19 @@ export type Gate1Result = {
 }
 
 const MIN_DESCRIPTION_LENGTH = 20
+const MAX_RETRIES = 2
 const GATE1_TIMEOUT_MS = 60000
 
 // Phase 1: ルールベース（高速・無料）
 export function runGate1Rules(task: Task): Gate1Result {
   const reasons: string[] = []
+
+  // Rule 0: リトライ上限超過 → Worker実行前にkill
+  const retryCount = getRetryCount(task.id)
+  if (retryCount >= MAX_RETRIES) {
+    reasons.push(`max retries exceeded (${retryCount}/${MAX_RETRIES})`)
+    return { verdict: "kill", reasons }
+  }
 
   if (!task.description || task.description.length < MIN_DESCRIPTION_LENGTH) {
     reasons.push(`description too short (${task.description?.length ?? 0} chars, min ${MIN_DESCRIPTION_LENGTH})`)
