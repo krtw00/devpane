@@ -105,6 +105,21 @@ export function createPullRequest(taskId: string, title: string, facts: { files_
   }
 }
 
+export function autoMergePr(taskId: string): boolean {
+  const branch = `devpane/task-${taskId}`
+  try {
+    execFileSync("gh", [
+      "pr", "merge", branch,
+      "--merge",
+      "--delete-branch",
+    ], { cwd: config.PROJECT_ROOT, encoding: "utf-8", timeout: 30000 })
+    return true
+  } catch (err) {
+    console.error(`[worktree] auto-merge failed for ${branch}:`, err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
 export function pruneWorktrees(): void {
   // git worktree prune で壊れた参照を掃除
   git("worktree", "prune")

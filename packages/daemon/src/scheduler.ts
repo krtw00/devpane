@@ -1,7 +1,7 @@
 import type { Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
-import { createWorktree, removeWorktree, createPullRequest, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
+import { createWorktree, removeWorktree, createPullRequest, autoMergePr, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
@@ -230,7 +230,7 @@ async function executeTask(task: Task): Promise<void> {
       broadcast("task:updated", { id: task.id, status: "done", result: facts })
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
-      // PR作成
+      // PR作成 → 自動マージ
       let prUrl: string | null = null
       if (facts.commit_hash) {
         prUrl = createPullRequest(task.id, task.title, facts)
@@ -238,6 +238,16 @@ async function executeTask(task: Task): Promise<void> {
           console.log(`[scheduler] PR created for task ${task.id}: ${prUrl}`)
           appendLog(task.id, "system", `[pr] ${prUrl}`)
           emit({ type: "pr.created", taskId: task.id, url: prUrl })
+
+          // Gate3通過済みなので自動マージ → mainを最新化
+          const merged = autoMergePr(task.id)
+          if (merged) {
+            console.log(`[scheduler] auto-merged PR for task ${task.id}`)
+            appendLog(task.id, "system", `[auto-merge] done`)
+            pullMain()
+          } else {
+            console.warn(`[scheduler] auto-merge failed for task ${task.id}, PR remains open`)
+          }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)
         }
