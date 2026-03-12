@@ -70,6 +70,23 @@ export async function fetchCostStats(): Promise<CostStats> {
   return fetchJson<CostStats>('/stats/cost')
 }
 
+export type CostLimitInfo = {
+  limit: number
+  used: number
+  remaining: number
+  ratio: number
+}
+
+export type CostLimits = {
+  daily: CostLimitInfo
+  monthly: CostLimitInfo
+  paused: boolean
+}
+
+export async function fetchCostLimits(): Promise<CostLimits> {
+  return fetchJson<CostLimits>('/stats/cost/limits')
+}
+
 export type AgentEvent = {
   type: string
   taskId?: string

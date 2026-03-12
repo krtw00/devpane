@@ -185,6 +185,24 @@ export function getTaskLogs(taskId: string): TaskLog[] {
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
 }
 
+export function getCostToday(): number {
+  const d = getDb()
+  const row = d.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) AS cost
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at >= date('now')
+  `).get() as { cost: number }
+  return row.cost
+}
+
+export function getCostMonth(): number {
+  const d = getDb()
+  const row = d.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) AS cost
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at >= date('now', 'start of month')
+  `).get() as { cost: number }
+  return row.cost
+}
+
 export function getCostStats() {
   const d = getDb()
 

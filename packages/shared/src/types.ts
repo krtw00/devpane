@@ -103,4 +103,6 @@ export type Config = {
   WORKER_CONCURRENCY: number
   DB_PATH: string
   API_PORT: number
+  DAILY_COST_LIMIT_USD: number
+  MONTHLY_COST_LIMIT_USD: number
 }

@@ -1,6 +1,6 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
+import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, getCostToday, getCostMonth } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -31,11 +31,41 @@ export function isRateLimitError(message: string): boolean {
 const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 
 let alive = true
+let paused = false
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
 
 export function stopScheduler(): void {
   alive = false
+}
+
+export function isSchedulerPaused(): boolean {
+  return paused
+}
+
+function checkCostLimits(): boolean {
+  const dailyCost = getCostToday()
+  const monthlyCost = getCostMonth()
+
+  if (dailyCost >= config.DAILY_COST_LIMIT_USD) {
+    console.warn(`[scheduler] daily cost limit reached: $${dailyCost.toFixed(4)} >= $${config.DAILY_COST_LIMIT_USD}`)
+    appendLog("scheduler", "system", `[cost-limit] daily limit reached: $${dailyCost.toFixed(4)} / $${config.DAILY_COST_LIMIT_USD}`)
+    paused = true
+    return false
+  }
+
+  if (monthlyCost >= config.MONTHLY_COST_LIMIT_USD) {
+    console.warn(`[scheduler] monthly cost limit reached: $${monthlyCost.toFixed(4)} >= $${config.MONTHLY_COST_LIMIT_USD}`)
+    appendLog("scheduler", "system", `[cost-limit] monthly limit reached: $${monthlyCost.toFixed(4)} / $${config.MONTHLY_COST_LIMIT_USD}`)
+    paused = true
+    return false
+  }
+
+  if (paused) {
+    console.log("[scheduler] cost limits cleared, resuming")
+    paused = false
+  }
+  return true
 }
 
 function getRateLimitBackoff(): number {
@@ -244,6 +274,14 @@ export async function startScheduler(): Promise<void> {
   recoverOrphanTasks()
 
   while (alive) {
+    // 0. Check cost limits
+    if (!checkCostLimits()) {
+      console.log(`[scheduler] paused due to cost limit, waiting ${config.IDLE_INTERVAL_SEC}s`)
+      broadcast("scheduler:paused", { reason: "cost_limit" })
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      continue
+    }
+
     // 1. Check for pending tasks
     let task = getNextPending()
 

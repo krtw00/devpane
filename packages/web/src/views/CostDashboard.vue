@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { fetchCostStats, type CostStats } from '../composables/useApi'
+import { fetchCostStats, fetchCostLimits, type CostStats, type CostLimits } from '../composables/useApi'
 
 const data = ref<CostStats | null>(null)
+const limits = ref<CostLimits | null>(null)
 const loading = ref(true)
 const error = ref('')
 
 onMounted(async () => {
   try {
-    data.value = await fetchCostStats()
+    const [stats, lim] = await Promise.all([fetchCostStats(), fetchCostLimits()])
+    data.value = stats
+    limits.value = lim
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -63,6 +66,35 @@ const maxDailyCost = computed(() => {
           <span class="stat-label">avg/task</span>
         </div>
       </div>
+
+      <section v-if="limits" class="limits-section">
+        <h2>Budget</h2>
+        <div v-if="limits.paused" class="paused-badge">PAUSED</div>
+        <div class="limit-row">
+          <span class="limit-label">Daily</span>
+          <div class="limit-bar-track">
+            <div
+              class="limit-bar"
+              :class="{ warning: limits.daily.ratio >= 0.8, exceeded: limits.daily.ratio >= 1 }"
+              :style="{ width: Math.min(limits.daily.ratio * 100, 100) + '%' }"
+            />
+          </div>
+          <span class="limit-value">{{ usd(limits.daily.used) }} / {{ usd(limits.daily.limit) }}</span>
+          <span class="limit-remaining">{{ usd(limits.daily.remaining) }} left</span>
+        </div>
+        <div class="limit-row">
+          <span class="limit-label">Monthly</span>
+          <div class="limit-bar-track">
+            <div
+              class="limit-bar"
+              :class="{ warning: limits.monthly.ratio >= 0.8, exceeded: limits.monthly.ratio >= 1 }"
+              :style="{ width: Math.min(limits.monthly.ratio * 100, 100) + '%' }"
+            />
+          </div>
+          <span class="limit-value">{{ usd(limits.monthly.used) }} / {{ usd(limits.monthly.limit) }}</span>
+          <span class="limit-remaining">{{ usd(limits.monthly.remaining) }} left</span>
+        </div>
+      </section>
 
       <section class="chart-section">
         <h2>Daily Spend</h2>
@@ -171,6 +203,82 @@ h1 {
   text-align: center;
   color: #f85149;
   padding: 3rem 0;
+}
+
+.limits-section {
+  border-top: 1px solid #30363d;
+  padding-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.limits-section h2 {
+  font-size: 0.95rem;
+  color: #f0f6fc;
+  margin-bottom: 0.75rem;
+}
+
+.paused-badge {
+  display: inline-block;
+  background: #f8514966;
+  color: #f85149;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.limit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.limit-label {
+  width: 4rem;
+  color: #8b949e;
+  flex-shrink: 0;
+}
+
+.limit-bar-track {
+  flex: 1;
+  height: 18px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.limit-bar {
+  height: 100%;
+  background: #3fb950;
+  border-radius: 3px;
+  min-width: 2px;
+  transition: width 0.3s;
+}
+
+.limit-bar.warning {
+  background: #d29922;
+}
+
+.limit-bar.exceeded {
+  background: #f85149;
+}
+
+.limit-value {
+  width: 8rem;
+  text-align: right;
+  color: #f0f6fc;
+  flex-shrink: 0;
+}
+
+.limit-remaining {
+  width: 5rem;
+  text-align: right;
+  color: #8b949e;
+  flex-shrink: 0;
 }
 
 .chart-section {

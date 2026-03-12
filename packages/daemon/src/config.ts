@@ -23,4 +23,6 @@ export const config: Config = {
   WORKER_CONCURRENCY: Number(env("WORKER_CONCURRENCY", "1")),
   DB_PATH: env("DB_PATH", `${env("PROJECT_ROOT", findGitRoot())}/devpane.db`),
   API_PORT: Number(env("API_PORT", "3001")),
+  DAILY_COST_LIMIT_USD: Number(env("DAILY_COST_LIMIT_USD", "5.0")),
+  MONTHLY_COST_LIMIT_USD: Number(env("MONTHLY_COST_LIMIT_USD", "50.0")),
 }
