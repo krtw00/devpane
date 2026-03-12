@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 import { readFileSync, readdirSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
+import type { Task, TaskLog, TaskStatus, TaskCreator, Improvement } from "@devpane/shared"
 import { config } from "./config.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -36,6 +36,8 @@ function prepareStatements(db: Database.Database) {
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
     `),
     getTaskLogs: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC`),
+    getActiveImprovements: db.prepare(`SELECT * FROM improvements WHERE status = 'active'`),
+    getTasksSince: db.prepare(`SELECT * FROM tasks WHERE status IN ('done', 'failed') AND finished_at > ? ORDER BY finished_at ASC`),
   }
 }
 
@@ -245,6 +247,16 @@ export function getPipelineStats() {
     tasks_today: tasksToday.cnt,
     active_improvements: activeImprovements.cnt,
   }
+}
+
+export function getActiveImprovements(): Improvement[] {
+  getDb()
+  return stmts.getActiveImprovements.all() as Improvement[]
+}
+
+export function getTasksSince(timestamp: string): Task[] {
+  getDb()
+  return stmts.getTasksSince.all(timestamp) as Task[]
 }
 
 export function getCostStats() {

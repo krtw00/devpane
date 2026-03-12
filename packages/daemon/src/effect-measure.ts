@@ -116,7 +116,7 @@ export function measureEffect(
   if (verdict === "harmful") {
     newStatus = "reverted"
   } else if (verdict === "effective") {
-    newStatus = improvement.status // keep active
+    newStatus = "permanent"
   }
 
   s.updateVerdict.run(newStatus, verdict, afterMetrics, improvementId)
