@@ -7,7 +7,7 @@ import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
 import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
-import { emit } from "./events.js"
+import { emit, safeEmit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 
@@ -148,6 +148,18 @@ async function executeTask(task: Task): Promise<void> {
       // Gate 3 passed → PR作成
       finishTask(task.id, "done", JSON.stringify(facts))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
+
+      // SPC: メトリクス記録 + 管理図チェック
+      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
+      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
+      const spcAlerts = checkAllMetrics(task.id, result.cost_usd, executionMs, diffSize)
+      for (const alert of spcAlerts) {
+        if (alert.alert) {
+          safeEmit({ type: "spc.alert", metric: alert.metric, value: alert.value, ucl: alert.ucl })
+          console.warn(`[scheduler] SPC alert: ${alert.metric} = ${alert.value.toFixed(4)} (UCL: ${alert.ucl.toFixed(4)}) — ${alert.reason}`)
+        }
+      }
+
       emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
       broadcast("task:updated", { id: task.id, status: "done", result: facts })
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
@@ -178,16 +190,6 @@ async function executeTask(task: Task): Promise<void> {
     }
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
-
-    // SPC: メトリクス記録 + 管理図チェック
-    const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
-    recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
-    const spcAlerts = checkAllMetrics(task.id, result.cost_usd, executionMs, diffSize)
-    for (const alert of spcAlerts) {
-      if (alert.alert) {
-        console.warn(`[scheduler] SPC alert: ${alert.metric} = ${alert.value.toFixed(4)} (UCL: ${alert.ucl.toFixed(4)}) — ${alert.reason}`)
-      }
-    }
 
     if (isRateLimitError(result.result_text)) {
       await handleRateLimit("Worker")
