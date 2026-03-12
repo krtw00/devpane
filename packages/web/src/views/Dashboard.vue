@@ -163,11 +163,6 @@ function timeAgo(iso: string | null): string {
           <h1>DevPane</h1>
           <span class="subtitle">the office window</span>
         </div>
-        <nav class="nav-links">
-          <router-link to="/" class="active">Dashboard</router-link>
-          <router-link to="/cost">Cost</router-link>
-          <router-link to="/events">Events</router-link>
-        </nav>
         <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
           <span class="conn-dot" />
           {{ connected ? 'connected' : 'disconnected' }}
@@ -334,28 +329,6 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.nav-links {
-  display: flex;
-  gap: 1rem;
-}
-
-.nav-links a {
-  color: #8b949e;
-  text-decoration: none;
-  font-size: 0.85rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.nav-links a:hover {
-  color: #c9d1d9;
-}
-
-.nav-links a.active,
-.nav-links a.router-link-exact-active {
-  color: #58a6ff;
 }
 
 .conn-status {

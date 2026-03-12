@@ -74,11 +74,6 @@ function formatPayload(event: AgentEvent): string {
           <h1>Events</h1>
           <span class="subtitle">agent event log</span>
         </div>
-        <nav class="nav-links">
-          <router-link to="/">Dashboard</router-link>
-          <router-link to="/cost">Cost</router-link>
-          <router-link to="/events" class="active">Events</router-link>
-        </nav>
         <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
           <span class="conn-dot" />
           {{ connected ? 'connected' : 'disconnected' }}
@@ -125,11 +120,6 @@ header { margin-bottom: 1.5rem; }
 
 h1 { font-size: 1.5rem; margin: 0; color: #f0f6fc; }
 .subtitle { color: #8b949e; font-size: 0.85rem; }
-
-.nav-links { display: flex; gap: 1rem; }
-.nav-links a { color: #8b949e; text-decoration: none; font-size: 0.85rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
-.nav-links a:hover { color: #c9d1d9; }
-.nav-links a.active, .nav-links a.router-link-exact-active { color: #58a6ff; }
 
 .conn-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
 .conn-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }

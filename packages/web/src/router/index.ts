@@ -3,6 +3,10 @@ import Dashboard from '../views/Dashboard.vue'
 import TaskDetail from '../views/TaskDetail.vue'
 import CostDashboard from '../views/CostDashboard.vue'
 import EventsLog from '../views/EventsLog.vue'
+import Memories from '../views/Memories.vue'
+import SpcChart from '../views/SpcChart.vue'
+import PipelineView from '../views/PipelineView.vue'
+import Improvements from '../views/Improvements.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -11,5 +15,9 @@ export const router = createRouter({
     { path: '/tasks/:id', component: TaskDetail, props: true },
     { path: '/cost', component: CostDashboard },
     { path: '/events', component: EventsLog },
+    { path: '/memories', component: Memories },
+    { path: '/spc', component: SpcChart },
+    { path: '/pipeline', component: PipelineView },
+    { path: '/improvements', component: Improvements },
   ],
 })

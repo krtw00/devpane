@@ -34,10 +34,6 @@ const maxDailyCost = computed(() => {
           <h1>Cost</h1>
           <span class="subtitle">usage &amp; spend</span>
         </div>
-        <nav class="nav-links">
-          <router-link to="/">Dashboard</router-link>
-          <router-link to="/cost" class="active">Cost</router-link>
-        </nav>
       </div>
     </header>
 
@@ -113,28 +109,6 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.nav-links {
-  display: flex;
-  gap: 1rem;
-}
-
-.nav-links a {
-  color: #8b949e;
-  text-decoration: none;
-  font-size: 0.85rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.nav-links a:hover {
-  color: #c9d1d9;
-}
-
-.nav-links a.active,
-.nav-links a.router-link-exact-active {
-  color: #58a6ff;
 }
 
 .stats {
