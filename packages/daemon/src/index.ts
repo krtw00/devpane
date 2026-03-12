@@ -8,6 +8,7 @@ import { statsApi } from "./api/stats.js"
 import { eventsApi } from "./api/events.js"
 import { memoriesApi } from "./api/memories.js"
 import { schedulerApi } from "./api/scheduler.js"
+import { prAgentApi } from "./api/pr-agent.js"
 import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 import { killAllWorkers } from "./worker.js"
@@ -23,6 +24,7 @@ app.route("/stats", statsApi)
 app.route("/events", eventsApi)
 app.route("/memories", memoriesApi)
 app.route("/scheduler", schedulerApi)
+app.route("/pr-agent", prAgentApi)
 
 console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
 console.log(`[devpane] project root: ${config.PROJECT_ROOT}`)
