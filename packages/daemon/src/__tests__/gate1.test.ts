@@ -1,8 +1,23 @@
-import { describe, it, expect, beforeEach } from "vitest"
-import { runGate1Rules } from "../gate1.js"
-import { initDb, closeDb, createTask, getDb } from "../db.js"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import { runGate1Rules, runGate1 } from "../gate1.js"
+import { initDb, closeDb, createTask, getDb, getAgentEvents } from "../db.js"
 import { remember } from "../memory.js"
 import type { Task } from "@devpane/shared"
+
+// Mock spawnClaude to control LLM output
+const mockSpawnClaude = vi.fn()
+vi.mock("../claude.js", () => ({
+  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
+  killAllClaude: vi.fn(),
+}))
+
+vi.mock("../ws.js", () => ({
+  broadcast: vi.fn(),
+}))
+
+vi.mock("../discord.js", () => ({
+  notify: vi.fn().mockResolvedValue(undefined),
+}))
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -60,5 +75,54 @@ describe("Gate1 Rules", () => {
     const result = runGate1Rules(makeTask({ title: "スケジューラ制御API" }))
     expect(result.verdict).toBe("kill")
     expect(result.reasons.some((r: string) => r.includes("feature memory"))).toBe(true)
+  })
+})
+
+describe("Gate1 LLM fallback", () => {
+  beforeEach(() => {
+    closeDb()
+    initDb(":memory:")
+    mockSpawnClaude.mockReset()
+  })
+
+  it("returns recycle when LLM output is invalid JSON", async () => {
+    mockSpawnClaude.mockResolvedValue("this is not json at all")
+
+    const result = await runGate1(makeTask())
+    expect(result.verdict).toBe("recycle")
+  })
+
+  it("records gate.llm_fallback event on parse failure", async () => {
+    mockSpawnClaude.mockResolvedValue("unparseable garbage")
+
+    await runGate1(makeTask())
+
+    const events = getAgentEvents({ type: "gate.llm_fallback" as never })
+    expect(events.length).toBeGreaterThanOrEqual(1)
+    expect(events[0]).toMatchObject({
+      type: "gate.llm_fallback",
+      taskId: "test-gate1",
+      gate: "gate1",
+    })
+  })
+
+  it("returns recycle when spawnClaude throws", async () => {
+    mockSpawnClaude.mockRejectedValue(new Error("claude process crashed"))
+
+    const result = await runGate1(makeTask())
+    expect(result.verdict).toBe("recycle")
+  })
+
+  it("records gate.llm_fallback event when spawnClaude throws", async () => {
+    mockSpawnClaude.mockRejectedValue(new Error("timeout"))
+
+    await runGate1(makeTask())
+
+    const events = getAgentEvents({ type: "gate.llm_fallback" as never })
+    expect(events.length).toBeGreaterThanOrEqual(1)
+    expect(events[0]).toMatchObject({
+      type: "gate.llm_fallback",
+      taskId: "test-gate1",
+    })
   })
 })

@@ -166,6 +166,13 @@ export async function executeTask(task: Task): Promise<void> {
     broadcast("task:updated", { id: task.id, status: "failed" })
     return
   }
+  if (gate1.verdict === "recycle") {
+    console.log(`[scheduler] Gate 1 RECYCLE task ${task.id}: ${gate1.reasons.join("; ")}`)
+    appendLog(task.id, "gate1", `[recycle] ${gate1.reasons.join("; ")}`)
+    revertToPending(task.id)
+    broadcast("task:updated", { id: task.id, status: "pending" })
+    return
+  }
   emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
 
   const workerId = "worker-0"

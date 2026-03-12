@@ -10,7 +10,7 @@ import { spawnClaude } from "./claude.js"
 import { config } from "./config.js"
 
 export type Gate1Result = {
-  verdict: "go" | "kill"
+  verdict: "go" | "kill" | "recycle"
   reasons: string[]
 }
 
@@ -109,8 +109,9 @@ async function runGate1Llm(task: Task): Promise<Gate1Result> {
 
     const match = text.match(/\{[\s\S]*\}/)
     if (!match) {
-      console.warn(`[gate1] LLM output not parseable, defaulting to go`)
-      return { verdict: "go", reasons: [] }
+      console.error(`[gate1] LLM output not parseable, recycling task`)
+      emit({ type: "gate.llm_fallback", taskId: task.id, gate: "gate1", error: "LLM output not parseable" })
+      return { verdict: "recycle", reasons: ["LLM output not parseable"] }
     }
 
     const parsed = JSON.parse(match[0])
@@ -120,8 +121,9 @@ async function runGate1Llm(task: Task): Promise<Gate1Result> {
     return { verdict: "go", reasons: [] }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.warn(`[gate1] LLM check failed, defaulting to go: ${msg}`)
-    return { verdict: "go", reasons: [] }
+    console.error(`[gate1] LLM check failed, recycling task: ${msg}`)
+    emit({ type: "gate.llm_fallback", taskId: task.id, gate: "gate1", error: msg })
+    return { verdict: "recycle", reasons: [`LLM check failed: ${msg}`] }
   }
 }
 
@@ -142,6 +144,11 @@ export async function runGate1(task: Task): Promise<Gate1Result> {
   if (llmResult.verdict === "kill") {
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: llmResult.reasons.join("; ") })
     appendLog(task.id, "gate1", `[kill:llm] ${llmResult.reasons.join("; ")}`)
+    return llmResult
+  }
+
+  if (llmResult.verdict === "recycle") {
+    appendLog(task.id, "gate1", `[recycle:llm] ${llmResult.reasons.join("; ")}`)
     return llmResult
   }
 
