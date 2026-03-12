@@ -14,6 +14,7 @@ import { runTester } from "./tester.js"
 import { circuitBreaker } from "./circuit-breaker.js"
 import { runPrAgent } from "./pr-agent.js"
 import { runHooks, type TaskCompletedData } from "./scheduler-hooks.js"
+import { remember } from "./memory.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
 
@@ -138,6 +139,7 @@ export async function executeTask(task: Task): Promise<void> {
   if (gate1.verdict === "kill") {
     console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: gate1.reasons.join("; ") })
+    remember("lesson", `[gate1:kill] ${gate1.reasons.join("; ")}`, task.id)
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
     broadcast("task:updated", { id: task.id, status: "failed" })
@@ -216,12 +218,14 @@ export async function executeTask(task: Task): Promise<void> {
     if (gate3.verdict === "kill") {
       console.log(`[scheduler] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "kill", reason: gate3.reasons.join("; ") })
+      remember("lesson", `[gate3:kill] ${gate3.reasons.join("; ")}`, task.id)
       finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
       broadcast("task:updated", { id: task.id, status: "failed", result: facts })
     } else if (gate3.verdict === "recycle") {
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "recycle", reason: gate3.reasons.join("; ") })
+      remember("lesson", `[gate3:recycle] ${gate3.reasons.join("; ")}`, task.id)
       const retryCount = getRetryCount(task.id)
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
 
