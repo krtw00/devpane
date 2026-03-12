@@ -40,9 +40,9 @@ const server = serve({ fetch: app.fetch, port: config.API_PORT }, () => {
 attachWebSocket(server)
 
 // Graceful shutdown
-function shutdown() {
+async function shutdown() {
   console.log("[devpane] shutting down...")
-  stopScheduler()
+  await stopScheduler()
   killAllWorkers()
   killAllPm()
   process.exit(0)
