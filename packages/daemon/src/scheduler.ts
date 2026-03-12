@@ -10,6 +10,7 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import { analyzeFailures } from "./kaizen.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -33,6 +34,8 @@ const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
 let alive = true
 let pmConsecutiveFailures = 0
 let rateLimitHits = 0
+let completedTaskCount = 0
+const KAIZEN_INTERVAL = 10
 
 export function stopScheduler(): void {
   alive = false
@@ -267,7 +270,21 @@ export async function startScheduler(): Promise<void> {
     // 3. Execute the task
     await executeTask(task)
 
-    // 4. Brief pause between tasks to avoid hammering
+    // 4. Kaizen: N件完了ごとに失敗分析
+    completedTaskCount++
+    if (completedTaskCount % KAIZEN_INTERVAL === 0) {
+      try {
+        const kaizen = await analyzeFailures()
+        if (kaizen.improvements_applied > 0) {
+          console.log(`[scheduler] kaizen: ${kaizen.improvements_applied} improvements from ${kaizen.analyzed_count} failures (top: ${kaizen.top_root_cause})`)
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(`[scheduler] kaizen analysis failed: ${msg}`)
+      }
+    }
+
+    // 5. Brief pause between tasks to avoid hammering
     await sleep(1000)
   }
 

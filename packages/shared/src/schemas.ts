@@ -77,6 +77,16 @@ export const WhyWhyAnalysisSchema = z.object({
 
 export const ImprovementVerdictSchema = z.enum(["effective", "ineffective", "harmful"])
 
+// --- Kaizen Result (改善分析の結果) ---
+
+export const KaizenResultSchema = z.object({
+  analyzed_count: z.number().int().min(0),
+  top_root_cause: RootCause.nullable(),
+  frequency: z.number().int().min(0),
+  analysis: WhyWhyAnalysisSchema.nullable(),
+  improvements_applied: z.number().int().min(0),
+})
+
 // --- Typed Agent Events ---
 
 export const AgentEventSchema = z.discriminatedUnion("type", [
@@ -106,4 +116,5 @@ export type Gate3Verdict = z.infer<typeof Gate3VerdictSchema>
 export type ImprovementAction = z.infer<typeof ImprovementActionSchema>
 export type WhyWhyAnalysis = z.infer<typeof WhyWhyAnalysisSchema>
 export type ImprovementVerdict = z.infer<typeof ImprovementVerdictSchema>
+export type KaizenResult = z.infer<typeof KaizenResultSchema>
 export type AgentEvent = z.infer<typeof AgentEventSchema>
