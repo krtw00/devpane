@@ -85,15 +85,18 @@ export async function fetchEvents(limit = 100, type?: string): Promise<AgentEven
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])
+  const diffLogs = ref<TaskLog[]>([])
 
   async function refresh() {
-    const [t, l] = await Promise.all([
+    const [t, l, d] = await Promise.all([
       fetchJson<Task>(`/tasks/${id}`),
       fetchJson<TaskLog[]>(`/tasks/${id}/logs`),
+      fetchJson<TaskLog[]>(`/tasks/${id}/diff`),
     ])
     task.value = t
     logs.value = l
+    diffLogs.value = d
   }
 
-  return { task, logs, refresh }
+  return { task, logs, diffLogs, refresh }
 }

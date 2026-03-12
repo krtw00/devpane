@@ -1,6 +1,9 @@
 import { execFileSync } from "node:child_process"
+import { join } from "node:path"
 import type { ObservableFacts } from "@devpane/shared"
 import { getWorktreeDiff, commitWorktree } from "./worktree.js"
+import { appendLog } from "./db.js"
+import { config } from "./config.js"
 
 export function collectFacts(
   taskId: string,
@@ -10,6 +13,19 @@ export function collectFacts(
 ): ObservableFacts {
   // Commit changes first
   const commitHash = commitWorktree(taskId, taskTitle) ?? undefined
+
+  // Save diff output to task_logs
+  if (commitHash) {
+    const wtPath = join(config.PROJECT_ROOT, ".worktrees", `task-${taskId}`)
+    try {
+      const diffStat = execFileSync("git", ["diff", "--stat", "main...HEAD"], { cwd: wtPath, encoding: "utf-8" }).trim()
+      const diffUnified = execFileSync("git", ["diff", "main...HEAD"], { cwd: wtPath, encoding: "utf-8" }).trim()
+      if (diffStat) appendLog(taskId, "diff", diffStat)
+      if (diffUnified) appendLog(taskId, "diff", diffUnified)
+    } catch {
+      // diff collection is not fatal
+    }
+  }
 
   // Collect diff stats
   const { filesChanged, additions, deletions } = getWorktreeDiff(taskId)

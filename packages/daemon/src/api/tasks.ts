@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { getAllTasks, getTask, getTaskLogs, createTask } from "../db.js"
+import { getAllTasks, getTask, getTaskLogs, getTaskLogsByAgent, createTask } from "../db.js"
 
 export const tasksApi = new Hono()
 
@@ -16,6 +16,11 @@ tasksApi.get("/:id", (c) => {
 
 tasksApi.get("/:id/logs", (c) => {
   const logs = getTaskLogs(c.req.param("id"))
+  return c.json(logs)
+})
+
+tasksApi.get("/:id/diff", (c) => {
+  const logs = getTaskLogsByAgent(c.req.param("id"), "diff")
   return c.json(logs)
 })
 

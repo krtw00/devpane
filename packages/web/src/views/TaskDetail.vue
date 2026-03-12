@@ -1,9 +1,29 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useTaskDetail } from '../composables/useApi'
 
 const props = defineProps<{ id: string }>()
-const { task, logs, refresh } = useTaskDetail(props.id)
+const { task, logs, diffLogs, refresh } = useTaskDetail(props.id)
+
+const activeTab = ref<'logs' | 'diff'>('logs')
+
+const diffStat = computed(() => {
+  if (!diffLogs.value.length) return null
+  return diffLogs.value[0]?.message ?? null
+})
+
+const diffUnified = computed(() => {
+  if (diffLogs.value.length < 2) return null
+  return diffLogs.value[1]?.message ?? null
+})
+
+function diffLineClass(line: string): string {
+  if (line.startsWith('+++') || line.startsWith('---')) return 'diff-meta'
+  if (line.startsWith('@@')) return 'diff-hunk'
+  if (line.startsWith('+')) return 'diff-add'
+  if (line.startsWith('-')) return 'diff-del'
+  return ''
+}
 
 let timer: ReturnType<typeof setInterval>
 
@@ -78,15 +98,31 @@ const facts = computed(() => {
         </div>
       </section>
 
-      <section class="logs">
-        <h2>Logs ({{ logs.length }})</h2>
-        <div class="log-stream">
+      <section class="tabs-section">
+        <div class="tab-bar">
+          <button :class="['tab', { active: activeTab === 'logs' }]" @click="activeTab = 'logs'">
+            Logs ({{ logs.length }})
+          </button>
+          <button :class="['tab', { active: activeTab === 'diff' }]" @click="activeTab = 'diff'"
+                  :disabled="!diffLogs.length">
+            Diff
+          </button>
+        </div>
+
+        <div v-if="activeTab === 'logs'" class="log-stream">
           <div v-for="log in logs" :key="log.id" class="log-entry">
             <span class="log-time">{{ new Date(log.timestamp).toLocaleTimeString() }}</span>
             <span class="log-agent">[{{ log.agent }}]</span>
             <span class="log-msg">{{ log.message }}</span>
           </div>
           <div v-if="logs.length === 0" class="empty">no logs yet</div>
+        </div>
+
+        <div v-if="activeTab === 'diff'" class="diff-view">
+          <pre v-if="diffStat" class="diff-stat">{{ diffStat }}</pre>
+          <pre v-if="diffUnified" class="diff-unified"><template v-for="(line, i) in diffUnified.split('\n')" :key="i"><span :class="diffLineClass(line)">{{ line }}
+</span></template></pre>
+          <div v-if="!diffLogs.length" class="empty">no diff available</div>
         </div>
       </section>
     </template>
@@ -216,6 +252,66 @@ details ul {
   text-align: center;
   padding: 2rem 0;
 }
+
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0;
+}
+
+.tab {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-bottom: none;
+  color: #8b949e;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+}
+
+.tab.active {
+  background: #161b22;
+  color: #f0f6fc;
+  border-bottom: 1px solid #161b22;
+}
+
+.tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.diff-view {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 0 6px 6px 6px;
+  padding: 0.75rem;
+  max-height: 600px;
+  overflow: auto;
+}
+
+.diff-stat {
+  background: #161b22;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  margin: 0 0 0.75rem;
+  white-space: pre-wrap;
+}
+
+.diff-unified {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.diff-add { color: #3fb950; background: rgba(63, 185, 80, 0.1); }
+.diff-del { color: #f85149; background: rgba(248, 81, 73, 0.1); }
+.diff-hunk { color: #79c0ff; }
+.diff-meta { color: #8b949e; font-weight: 600; }
 
 .gate3 { margin-top: 1rem; }
 

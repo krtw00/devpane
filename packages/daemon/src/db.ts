@@ -35,6 +35,7 @@ function prepareStatements(db: Database.Database) {
       INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)
     `),
     getTaskLogs: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC`),
+    getTaskLogsByAgent: db.prepare(`SELECT * FROM task_logs WHERE task_id = ? AND agent = ? ORDER BY timestamp ASC`),
   }
 }
 
@@ -183,6 +184,11 @@ export function appendLog(taskId: string, agent: string, message: string): void 
 export function getTaskLogs(taskId: string): TaskLog[] {
   getDb()
   return stmts.getTaskLogs.all(taskId) as TaskLog[]
+}
+
+export function getTaskLogsByAgent(taskId: string, agent: string): TaskLog[] {
+  getDb()
+  return stmts.getTaskLogsByAgent.all(taskId, agent) as TaskLog[]
 }
 
 export function getCostStats() {
