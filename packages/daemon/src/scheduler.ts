@@ -9,6 +9,7 @@ import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
+import { runGate2 } from "./gate2.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 
 function sleep(ms: number): Promise<void> {
@@ -113,6 +114,32 @@ async function executeTask(task: Task): Promise<void> {
   }
 
   try {
+    // Gate 2: 仕様-テスト照合（テスター完了後、Worker実行前）
+    const gate2 = runGate2(task.id, task.description, worktreePath)
+    if (gate2.verdict === "recycle") {
+      const MAX_RETRIES = 2
+      const retryCount = getRetryCount(task.id)
+
+      if (retryCount < MAX_RETRIES) {
+        console.log(`[scheduler] Gate 2 RECYCLE task ${task.id} (retry ${retryCount + 1}/${MAX_RETRIES}): ${gate2.reasons.join("; ")}`)
+        requeueTask(task.id)
+        appendLog(task.id, "system", `[gate2] recycled to tester (retry ${retryCount + 1}/${MAX_RETRIES}): ${gate2.reasons.join("; ")}`)
+        broadcast("task:updated", { id: task.id, status: "pending" })
+      } else {
+        console.log(`[scheduler] Gate 2 RECYCLE→FAIL task ${task.id} (max retries ${MAX_RETRIES}): ${gate2.reasons.join("; ")}`)
+        finishTask(task.id, "failed", JSON.stringify({ gate2 }))
+        emit({ type: "task.failed", taskId: task.id, rootCause: "test_gap" })
+        broadcast("task:updated", { id: task.id, status: "failed" })
+      }
+
+      try {
+        removeWorktree(task.id)
+      } catch {
+        // ignore cleanup errors
+      }
+      return
+    }
+
     const startTime = Date.now()
     const result = await runWorker(task, worktreePath)
     const executionMs = Date.now() - startTime
