@@ -1,4 +1,4 @@
-import type { Task } from "@devpane/shared"
+import type { Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees, countOpenPrs } from "./worktree.js"
@@ -9,7 +9,9 @@ import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { emit, safeEmit } from "./events.js"
 import { runGate1 } from "./gate1.js"
+import { runGate2 } from "./gate2.js"
 import { runGate3 } from "./gate.js"
+import { runTester } from "./tester.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { circuitBreaker } from "./circuit-breaker.js"
 import { runPrAgent } from "./pr-agent.js"
@@ -99,6 +101,14 @@ async function callPm(): Promise<Task[]> {
   }
 }
 
+function taskToPmOutput(task: Task): PmOutput {
+  const constraints = parseConstraints(task.constraints)
+  return {
+    tasks: [{ title: task.title, description: task.description, priority: task.priority, constraints: constraints.length > 0 ? constraints : undefined }],
+    reasoning: "",
+  }
+}
+
 async function executeTask(task: Task): Promise<void> {
   // Gate 1: 方針チェック（Worker実行前に弾く）
   const gate1 = await runGate1(task)
@@ -129,8 +139,49 @@ async function executeTask(task: Task): Promise<void> {
   }
 
   try {
+    // Tester: テスト先行生成
+    const spec = taskToPmOutput(task)
+    let testFiles: string[] = []
+    const GATE2_MAX_RETRIES = 1
+
+    for (let testerAttempt = 0; testerAttempt <= GATE2_MAX_RETRIES; testerAttempt++) {
+      console.log(`[scheduler] running tester for task ${task.id}${testerAttempt > 0 ? ` (retry ${testerAttempt})` : ""}`)
+      appendLog(task.id, "tester", `[start] tester attempt ${testerAttempt + 1}`)
+      const testerResult = await runTester(spec, worktreePath)
+      testFiles = testerResult.testFiles
+
+      if (testerResult.exit_code !== 0) {
+        console.warn(`[scheduler] tester exited with code ${testerResult.exit_code} for task ${task.id}`)
+        appendLog(task.id, "tester", `[warn] exit_code=${testerResult.exit_code}`)
+      }
+
+      // Gate 2: テストファイル品質検証
+      const gate2 = runGate2(spec, testFiles, worktreePath)
+
+      if (gate2.verdict === "go") {
+        emit({ type: "gate.passed", taskId: task.id, gate: "gate2" })
+        appendLog(task.id, "gate2", `[pass] ${testFiles.length} test files validated`)
+        console.log(`[scheduler] Gate 2 PASS task ${task.id}: ${testFiles.length} test files`)
+        break
+      }
+
+      // Gate 2 recycle
+      const reason = gate2.reasons.join("; ")
+      if (testerAttempt < GATE2_MAX_RETRIES) {
+        emit({ type: "gate.rejected", taskId: task.id, gate: "gate2", verdict: "recycle", reason })
+        appendLog(task.id, "gate2", `[recycle] ${reason} — retrying tester`)
+        console.log(`[scheduler] Gate 2 RECYCLE task ${task.id}: ${reason}`)
+      } else {
+        // リトライ上限到達 — テストなしでWorker続行
+        emit({ type: "gate.rejected", taskId: task.id, gate: "gate2", verdict: "recycle", reason: `${reason} (max tester retries)` })
+        appendLog(task.id, "gate2", `[recycle→skip] ${reason} — proceeding without tests`)
+        console.warn(`[scheduler] Gate 2 max retries, proceeding without tests for task ${task.id}`)
+        testFiles = []
+      }
+    }
+
     const startTime = Date.now()
-    const result = await runWorker(task, worktreePath)
+    const result = await runWorker(task, worktreePath, testFiles)
     const executionMs = Date.now() - startTime
     const facts = collectFacts(task.id, task.title, worktreePath, result.exit_code)
 
