@@ -10,37 +10,51 @@ import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 import { killAllWorkers } from "./worker.js"
 import { killAllPm } from "./pm.js"
+import { runPrAgent } from "./pr-agent.js"
 
-const app = new Hono()
-
-app.use("*", cors())
-app.get("/health", (c) => c.json({ status: "ok" }))
-app.route("/tasks", tasksApi)
-app.route("/chat", chatApi)
-app.route("/stats", statsApi)
-app.route("/events", eventsApi)
-
-console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
-console.log(`[devpane] project root: ${config.PROJECT_ROOT}`)
-
-const server = serve({ fetch: app.fetch, port: config.API_PORT }, () => {
-  console.log(`[devpane] daemon listening on http://localhost:${config.API_PORT}`)
-  startScheduler().catch((err) => {
-    console.error("[devpane] scheduler crashed:", err)
-    process.exit(1)
-  })
-})
-
-attachWebSocket(server)
-
-// Graceful shutdown
-function shutdown() {
-  console.log("[devpane] shutting down...")
-  stopScheduler()
-  killAllWorkers()
-  killAllPm()
-  process.exit(0)
+// --pr-agent: 単発実行モード（cron想定）
+if (process.argv.includes("--pr-agent")) {
+  runPrAgent()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("[pr-agent] fatal:", err)
+      process.exit(1)
+    })
+} else {
+  startDaemon()
 }
 
-process.on("SIGINT", shutdown)
-process.on("SIGTERM", shutdown)
+function startDaemon() {
+  const app = new Hono()
+
+  app.use("*", cors())
+  app.get("/health", (c) => c.json({ status: "ok" }))
+  app.route("/tasks", tasksApi)
+  app.route("/chat", chatApi)
+  app.route("/stats", statsApi)
+  app.route("/events", eventsApi)
+
+  console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
+  console.log(`[devpane] project root: ${config.PROJECT_ROOT}`)
+
+  const server = serve({ fetch: app.fetch, port: config.API_PORT }, () => {
+    console.log(`[devpane] daemon listening on http://localhost:${config.API_PORT}`)
+    startScheduler().catch((err) => {
+      console.error("[devpane] scheduler crashed:", err)
+      process.exit(1)
+    })
+  })
+
+  attachWebSocket(server)
+
+  function shutdown() {
+    console.log("[devpane] shutting down...")
+    stopScheduler()
+    killAllWorkers()
+    killAllPm()
+    process.exit(0)
+  }
+
+  process.on("SIGINT", shutdown)
+  process.on("SIGTERM", shutdown)
+}
