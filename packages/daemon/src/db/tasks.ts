@@ -83,3 +83,30 @@ export function getTaskLogs(taskId: string): TaskLog[] {
 export function getTasksSince(timestamp: string): Task[] {
   return getDb().prepare(`SELECT * FROM tasks WHERE status IN ('done', 'failed') AND finished_at > ? ORDER BY finished_at ASC`).all(timestamp) as Task[]
 }
+
+/**
+ * Recover orphaned tasks left in 'running' status after daemon restart.
+ * Tasks whose started_at exceeds timeoutMs are requeued (if under maxRetries) or failed.
+ * Returns the number of recovered tasks.
+ */
+export function recoverOrphanedTasks(timeoutMs: number, maxRetries: number): number {
+  const db = getDb()
+  const cutoff = new Date(Date.now() - timeoutMs).toISOString()
+  const orphans = db.prepare(
+    `SELECT * FROM tasks WHERE status = 'running' AND started_at < ?`,
+  ).all(cutoff) as Task[]
+
+  for (const task of orphans) {
+    if (task.retry_count < maxRetries) {
+      db.prepare(
+        `UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL, retry_count = retry_count + 1 WHERE id = ?`,
+      ).run(task.id)
+    } else {
+      db.prepare(
+        `UPDATE tasks SET status = 'failed', finished_at = ? WHERE id = ?`,
+      ).run(new Date().toISOString(), task.id)
+    }
+  }
+
+  return orphans.length
+}
