@@ -38,7 +38,21 @@ export function isRateLimitError(message: string): boolean {
 }
 
 let alive = true
+let paused = false
+let rateLimitHits = 0
 let pmConsecutiveFailures = 0
+
+export function getSchedulerState() {
+  return { alive, rateLimitHits, pmConsecutiveFailures }
+}
+
+export function pauseScheduler(): void {
+  paused = true
+}
+
+export function resumeScheduler(): void {
+  paused = false
+}
 
 export function stopScheduler(): void {
   alive = false
@@ -59,6 +73,7 @@ async function callPm(): Promise<Task[]> {
     const msg = err instanceof Error ? err.message : String(err)
 
     if (isRateLimitError(msg)) {
+      rateLimitHits++
       circuitBreaker.recordFailure()
       console.warn(`[scheduler] rate limit hit during PM, circuit: ${circuitBreaker.getState()}`)
       appendLog("scheduler", "system", `[rate-limit] PM: circuit ${circuitBreaker.getState()}`)
@@ -188,6 +203,7 @@ async function executeTask(task: Task): Promise<void> {
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
 
     if (isRateLimitError(result.result_text)) {
+      rateLimitHits++
       circuitBreaker.recordFailure()
     } else {
       circuitBreaker.recordSuccess()
@@ -206,6 +222,7 @@ async function executeTask(task: Task): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
 
     if (isRateLimitError(msg)) {
+      rateLimitHits++
       revertToPending(task.id)
       circuitBreaker.recordFailure()
     } else {
@@ -241,6 +258,12 @@ export async function startScheduler(): Promise<void> {
   recoverOrphanTasks()
 
   while (alive) {
+    // Pause: 一時停止中はスリープしてスキップ
+    if (paused) {
+      await sleep(1000)
+      continue
+    }
+
     // Circuit Breaker: open状態なら全リクエストをスキップ
     if (!circuitBreaker.canProceed()) {
       const backoff = circuitBreaker.getBackoffSec()

@@ -120,8 +120,37 @@ export async function createMemory(data: { category: string; content: string }):
   return res.json()
 }
 
+export async function updateMemory(id: string, content: string): Promise<void> {
+  const res = await fetch(`${BASE}/memories/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
 export async function deleteMemory(id: string): Promise<void> {
   const res = await fetch(`${BASE}/memories/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
+export type SchedulerStatus = {
+  alive: boolean
+  rateLimitHits: number
+  pmConsecutiveFailures: number
+}
+
+export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
+  return fetchJson<SchedulerStatus>('/scheduler/status')
+}
+
+export async function pauseScheduler(): Promise<void> {
+  const res = await fetch(`${BASE}/scheduler/pause`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
+export async function resumeScheduler(): Promise<void> {
+  const res = await fetch(`${BASE}/scheduler/resume`, { method: 'POST' })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
