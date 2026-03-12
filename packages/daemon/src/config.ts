@@ -23,4 +23,6 @@ export const config: Config = {
   WORKER_CONCURRENCY: Number(env("WORKER_CONCURRENCY", "1")),
   DB_PATH: env("DB_PATH", `${env("PROJECT_ROOT", findGitRoot())}/devpane.db`),
   API_PORT: Number(env("API_PORT", "3001")),
+  MAX_RETRIES: Number(env("DEVPANE_MAX_RETRIES", "2")),
+  MAX_DIFF_SIZE: Number(env("DEVPANE_MAX_DIFF_SIZE", "500")),
 }
