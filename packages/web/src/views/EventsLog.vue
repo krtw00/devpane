@@ -77,6 +77,8 @@ function formatPayload(event: AgentEvent): string {
         <nav class="nav-links">
           <router-link to="/">Dashboard</router-link>
           <router-link to="/cost">Cost</router-link>
+          <router-link to="/metrics">Metrics</router-link>
+          <router-link to="/improvements">Improvements</router-link>
           <router-link to="/events" class="active">Events</router-link>
           <router-link to="/memories">Memories</router-link>
         </nav>

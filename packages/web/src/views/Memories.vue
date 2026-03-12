@@ -76,6 +76,8 @@ onMounted(refresh)
         <nav class="nav-links">
           <router-link to="/">Dashboard</router-link>
           <router-link to="/cost">Cost</router-link>
+          <router-link to="/metrics">Metrics</router-link>
+          <router-link to="/improvements">Improvements</router-link>
           <router-link to="/events">Events</router-link>
           <router-link to="/memories" class="active">Memories</router-link>
         </nav>
