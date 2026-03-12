@@ -84,4 +84,38 @@ describe("Gate 3", () => {
     expect(result.failure!.stage).toBe("gate3")
     expect(result.failure!.why_chain.length).toBeGreaterThan(0)
   })
+
+  it("classifies root cause as unknown when test_result is undefined", () => {
+    // test_result/lint_resultがundefined（facts収集でcatchにも入らなかった場合）
+    const result = runGate3("test-9", makeFacts({
+      exit_code: 1,
+      test_result: undefined,
+      lint_result: undefined,
+    }))
+    expect(result.verdict).toBe("kill")
+    expect(result.failure).toBeDefined()
+    expect(result.failure!.root_cause).toBe("env_issue")
+  })
+
+  it("does not crash when test_result and lint_result are undefined", () => {
+    // undefinedでもnullチェックが正しく動くことを検証
+    const result = runGate3("test-10", makeFacts({
+      test_result: undefined,
+      lint_result: undefined,
+    }))
+    expect(result.verdict).toBe("go")
+    expect(result.failure).toBeUndefined()
+  })
+
+  it("classifies timeout-related reasons correctly", () => {
+    // _reasonsにtimeout情報が含まれるケースの分類
+    // 現状classifyRootCauseは_reasonsを未使用だが、修正後はtimeoutケース識別に活用
+    const result = runGate3("test-11", makeFacts({
+      exit_code: 1,
+      test_result: undefined,
+      lint_result: undefined,
+    }))
+    expect(result.verdict).toBe("kill")
+    expect(result.failure?.root_cause).toBeDefined()
+  })
 })

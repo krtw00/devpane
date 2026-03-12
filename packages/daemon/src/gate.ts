@@ -81,12 +81,13 @@ export function runGate3(taskId: string, facts: ObservableFacts): Gate3Result {
   return result
 }
 
-function classifyRootCause(facts: ObservableFacts, _reasons: string[]): RootCauseType {
-  if (facts.test_result && facts.test_result.failed > 0) return "test_gap"
-  if (facts.lint_result && facts.lint_result.errors > 0) return "scope_creep"
+function classifyRootCause(facts: ObservableFacts, reasons: string[]): RootCauseType {
+  if (facts.test_result?.failed && facts.test_result.failed > 0) return "test_gap"
+  if (facts.lint_result?.errors && facts.lint_result.errors > 0) return "scope_creep"
   const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
   if (diffSize > config.MAX_DIFF_SIZE) return "scope_creep"
   if (!facts.commit_hash || facts.files_changed.length === 0) return "unknown"
+  if (reasons.some(r => /timeout/i.test(r))) return "env_issue"
   if (facts.exit_code !== 0) return "env_issue"
   return "unknown"
 }

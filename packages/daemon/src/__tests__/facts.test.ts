@@ -61,4 +61,41 @@ describe("collectFacts", () => {
     const facts = collectFacts("task-004", "Broken task", "/tmp/worktree", 1)
     expect(facts.exit_code).toBe(1)
   })
+
+  it("returns default testResult when test throws unexpected error (no status)", async () => {
+    const cp = await import("node:child_process")
+    const mock = vi.mocked(cp.execFileSync)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mock.mockImplementation(((cmd: string, args: string[]) => {
+      if (cmd === "pnpm" && args[0] === "test") {
+        // 予期しない例外（statusプロパティなし）— e.g. ENOMEM, signal kill
+        throw new Error("unexpected crash")
+      }
+      return ""
+    }) as any)
+
+    const facts = collectFacts("task-005", "Crash test", "/tmp/worktree", 0)
+    // catchブロックでstatusがundefinedの場合、現状testResultはundefined
+    // 修正後はデフォルト値が設定されるべき
+    expect(facts.test_result).toBeDefined()
+    expect(facts.test_result!.failed).toBeGreaterThanOrEqual(1)
+    expect(facts.test_result!.exit_code).toBe(1)
+  })
+
+  it("returns default lintResult when lint throws unexpected error (no status)", async () => {
+    const cp = await import("node:child_process")
+    const mock = vi.mocked(cp.execFileSync)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mock.mockImplementation(((cmd: string, args: string[]) => {
+      if (cmd === "pnpm" && args.includes("lint")) {
+        throw new Error("unexpected lint crash")
+      }
+      return ""
+    }) as any)
+
+    const facts = collectFacts("task-006", "Lint crash", "/tmp/worktree", 0)
+    expect(facts.lint_result).toBeDefined()
+    expect(facts.lint_result!.errors).toBeGreaterThanOrEqual(1)
+    expect(facts.lint_result!.exit_code).toBe(1)
+  })
 })
