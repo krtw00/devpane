@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTasks, createTask, type Task } from '../composables/useApi'
+import { useTasks, createTask, fetchPipelineStats, type Task, type PipelineStats } from '../composables/useApi'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
 const route = useRoute()
@@ -50,6 +50,30 @@ watch(() => route.query, () => {
   sortKey.value = q.sort
 })
 
+const pipelineStats = ref<PipelineStats | null>(null)
+
+async function refreshPipelineStats() {
+  try {
+    pipelineStats.value = await fetchPipelineStats()
+  } catch {
+    // silently ignore - stats card will just not show
+  }
+}
+
+function passRateColor(rate: number): string {
+  if (rate >= 0.8) return 'green'
+  if (rate >= 0.5) return 'yellow'
+  return 'red'
+}
+
+function formatDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`
+  const min = Math.floor(sec / 60)
+  const s = sec % 60
+  if (min < 60) return `${min}m${s ? ` ${s}s` : ''}`
+  return `${Math.floor(min / 60)}h ${min % 60}m`
+}
+
 const chatInput = ref('')
 const sending = ref(false)
 const chatLog = ref<{ from: string; text: string; time: string }[]>([])
@@ -59,7 +83,11 @@ let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 10000)
+  refreshPipelineStats()
+  timer = setInterval(() => {
+    refresh()
+    refreshPipelineStats()
+  }, 10000)
 })
 
 onUnmounted(() => clearInterval(timer))
@@ -177,6 +205,25 @@ function timeAgo(iso: string | null): string {
         daemon connection lost — reconnecting...
       </div>
     </header>
+
+    <div v-if="pipelineStats" class="pipeline-cards">
+      <div :class="['pipeline-card', passRateColor(pipelineStats.gate3_pass_rate)]">
+        <span class="pipeline-num">{{ Math.round(pipelineStats.gate3_pass_rate * 100) }}%</span>
+        <span class="pipeline-label">Gate通過率</span>
+      </div>
+      <div class="pipeline-card">
+        <span class="pipeline-num">{{ formatDuration(pipelineStats.avg_execution_time) }}</span>
+        <span class="pipeline-label">平均実行時間</span>
+      </div>
+      <div class="pipeline-card">
+        <span class="pipeline-num">{{ pipelineStats.tasks_today }}</span>
+        <span class="pipeline-label">本日の完了数</span>
+      </div>
+      <div :class="['pipeline-card', pipelineStats.consecutive_failures >= 3 ? 'red' : '']">
+        <span class="pipeline-num">{{ pipelineStats.consecutive_failures }}</span>
+        <span class="pipeline-label">連続失敗数</span>
+      </div>
+    </div>
 
     <div class="stats">
       <div class="stat">
@@ -398,6 +445,60 @@ h1 {
   border-radius: 6px;
   font-size: 0.8rem;
   color: #f85149;
+}
+
+.pipeline-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.pipeline-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pipeline-card.green {
+  border-color: #3fb950;
+}
+
+.pipeline-card.yellow {
+  border-color: #d29922;
+}
+
+.pipeline-card.red {
+  border-color: #f85149;
+  background: #f8514910;
+}
+
+.pipeline-num {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #f0f6fc;
+}
+
+.pipeline-card.green .pipeline-num {
+  color: #3fb950;
+}
+
+.pipeline-card.yellow .pipeline-num {
+  color: #d29922;
+}
+
+.pipeline-card.red .pipeline-num {
+  color: #f85149;
+}
+
+.pipeline-label {
+  font-size: 0.7rem;
+  color: #8b949e;
+  margin-top: 0.25rem;
 }
 
 .stats {
