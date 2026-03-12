@@ -51,6 +51,8 @@ export function collectFacts(
         failed: failMatch ? Number(failMatch[1]) : 1,
         exit_code: err.status ?? 1,
       }
+    } else {
+      testResult = { passed: 0, failed: 1, exit_code: 1 }
     }
   }
 
@@ -77,6 +79,8 @@ export function collectFacts(
         errors: errorMatch ? Number(errorMatch[1]) : 1,
         exit_code: err.status ?? 1,
       }
+    } else {
+      lintResult = { errors: 1, exit_code: 1 }
     }
   }
 
