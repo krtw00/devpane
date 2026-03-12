@@ -10,6 +10,7 @@ import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
+import * as cb from "./circuit-breaker.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -27,35 +28,11 @@ export function isRateLimitError(message: string): boolean {
   return RATE_LIMIT_PATTERNS.some(p => p.test(message))
 }
 
-// Exponential backoff: 60s → 120s → 300s → 600s (max)
-const RATE_LIMIT_BACKOFFS = [60, 120, 300, 600]
-
 let alive = true
 let pmConsecutiveFailures = 0
-let rateLimitHits = 0
 
 export function stopScheduler(): void {
   alive = false
-}
-
-function getRateLimitBackoff(): number {
-  const idx = Math.min(rateLimitHits, RATE_LIMIT_BACKOFFS.length - 1)
-  return RATE_LIMIT_BACKOFFS[idx]
-}
-
-async function handleRateLimit(context: string): Promise<void> {
-  const backoffSec = getRateLimitBackoff()
-  rateLimitHits++
-  console.warn(`[scheduler] rate limit hit during ${context} (${rateLimitHits}x), backing off ${backoffSec}s`)
-  appendLog("scheduler", "system", `[rate-limit] ${context}: backing off ${backoffSec}s (hit #${rateLimitHits})`)
-  await sleep(backoffSec * 1000)
-}
-
-function clearRateLimit(): void {
-  if (rateLimitHits > 0) {
-    console.log(`[scheduler] rate limit cleared (was ${rateLimitHits} hits)`)
-    rateLimitHits = 0
-  }
 }
 
 async function callPm(): Promise<Task[]> {
@@ -63,7 +40,7 @@ async function callPm(): Promise<Task[]> {
   try {
     const output = await runPm()
     pmConsecutiveFailures = 0
-    clearRateLimit()
+    cb.recordSuccess()
     const tasks = ingestPmTasks(output)
     for (const t of tasks) {
       emit({ type: "task.created", taskId: t.id, by: "pm" })
@@ -73,7 +50,7 @@ async function callPm(): Promise<Task[]> {
     const msg = err instanceof Error ? err.message : String(err)
 
     if (isRateLimitError(msg)) {
-      await handleRateLimit("PM")
+      cb.trip()
       return []
     }
 
@@ -94,6 +71,15 @@ async function callPm(): Promise<Task[]> {
 }
 
 async function executeTask(task: Task): Promise<void> {
+  // Circuit Breaker: open 状態では Worker を呼ばず backoff 待機
+  if (!cb.canProceed()) {
+    const waitMs = cb.remainingMs()
+    console.log(`[scheduler] circuit breaker open, waiting ${Math.ceil(waitMs / 1000)}s before task ${task.id}`)
+    await sleep(waitMs)
+    // 再チェック: half-open に遷移したか確認
+    if (!cb.canProceed()) return
+  }
+
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
   startTask(task.id, workerId)
@@ -190,9 +176,9 @@ async function executeTask(task: Task): Promise<void> {
     }
 
     if (isRateLimitError(result.result_text)) {
-      await handleRateLimit("Worker")
+      cb.trip()
     } else {
-      clearRateLimit()
+      cb.recordSuccess()
     }
 
     // Cleanup worktree (keep branch if PR was created)
@@ -209,8 +195,7 @@ async function executeTask(task: Task): Promise<void> {
 
     if (isRateLimitError(msg)) {
       revertToPending(task.id)
-      emit({ type: "worker.rate_limited", backoffSec: getRateLimitBackoff() })
-      await handleRateLimit("Worker")
+      cb.trip()
     } else {
       console.error(`[scheduler] worker error: ${msg}`)
       finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
