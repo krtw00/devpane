@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { fetchEvents, type AgentEvent } from '../composables/useApi'
-import { useSocket, onWsEvent } from '../composables/useSocket'
-
-const { connected } = useSocket()
+import { onWsEvent } from '../composables/useSocket'
+import NavBar from '../components/NavBar.vue'
 const events = ref<AgentEvent[]>([])
 const loading = ref(false)
 const typeFilter = ref('all')
@@ -68,24 +67,7 @@ function formatPayload(event: AgentEvent): string {
 
 <template>
   <div class="events-page">
-    <header>
-      <div class="header-row">
-        <div>
-          <h1>Events</h1>
-          <span class="subtitle">agent event log</span>
-        </div>
-        <nav class="nav-links">
-          <router-link to="/">Dashboard</router-link>
-          <router-link to="/cost">Cost</router-link>
-          <router-link to="/events" class="active">Events</router-link>
-          <router-link to="/memories">Memories</router-link>
-        </nav>
-        <div class="conn-status" :class="connected ? 'conn-ok' : 'conn-err'">
-          <span class="conn-dot" />
-          {{ connected ? 'connected' : 'disconnected' }}
-        </div>
-      </div>
-    </header>
+    <NavBar title="Events" subtitle="agent event log" />
 
     <div class="filter-bar">
       <span class="filter-label">type</span>
@@ -115,29 +97,6 @@ function formatPayload(event: AgentEvent): string {
   font-family: 'SF Mono', 'Fira Code', monospace;
   color: #c9d1d9;
 }
-
-header { margin-bottom: 1.5rem; }
-
-.header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-h1 { font-size: 1.5rem; margin: 0; color: #f0f6fc; }
-.subtitle { color: #8b949e; font-size: 0.85rem; }
-
-.nav-links { display: flex; gap: 1rem; }
-.nav-links a { color: #8b949e; text-decoration: none; font-size: 0.85rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
-.nav-links a:hover { color: #c9d1d9; }
-.nav-links a.active, .nav-links a.router-link-exact-active { color: #58a6ff; }
-
-.conn-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
-.conn-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.conn-ok .conn-dot { background: #3fb950; }
-.conn-ok { color: #3fb950; }
-.conn-err .conn-dot { background: #f85149; }
-.conn-err { color: #f85149; }
 
 .filter-bar {
   display: flex;

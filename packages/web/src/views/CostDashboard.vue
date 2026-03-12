@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { fetchCostStats, type CostStats } from '../composables/useApi'
+import NavBar from '../components/NavBar.vue'
 
 const data = ref<CostStats | null>(null)
 const loading = ref(true)
@@ -28,20 +29,7 @@ const maxDailyCost = computed(() => {
 
 <template>
   <div class="dashboard">
-    <header>
-      <div class="header-row">
-        <div>
-          <h1>Cost</h1>
-          <span class="subtitle">usage &amp; spend</span>
-        </div>
-        <nav class="nav-links">
-          <router-link to="/">Dashboard</router-link>
-          <router-link to="/cost" class="active">Cost</router-link>
-          <router-link to="/events">Events</router-link>
-          <router-link to="/memories">Memories</router-link>
-        </nav>
-      </div>
-    </header>
+    <NavBar title="Cost" subtitle="usage &amp; spend" />
 
     <div v-if="loading" class="loading">loading...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
@@ -94,49 +82,6 @@ const maxDailyCost = computed(() => {
   padding: 2rem 1rem;
   font-family: 'SF Mono', 'Fira Code', monospace;
   color: #c9d1d9;
-}
-
-header {
-  margin-bottom: 2rem;
-}
-
-h1 {
-  font-size: 1.5rem;
-  margin: 0;
-  color: #f0f6fc;
-}
-
-.subtitle {
-  color: #8b949e;
-  font-size: 0.85rem;
-}
-
-.header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.nav-links {
-  display: flex;
-  gap: 1rem;
-}
-
-.nav-links a {
-  color: #8b949e;
-  text-decoration: none;
-  font-size: 0.85rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.nav-links a:hover {
-  color: #c9d1d9;
-}
-
-.nav-links a.active,
-.nav-links a.router-link-exact-active {
-  color: #58a6ff;
 }
 
 .stats {
