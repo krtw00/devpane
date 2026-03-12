@@ -92,6 +92,17 @@ export function checkMetric(metric: string, currentValue: number): SpcCheck | nu
     }
   }
 
+  // Rule 3: 直近3点中2点が2σ超
+  if (!check.alert && values.length >= 3) {
+    const twoSigma = 2 * stats.stddev
+    const recent3 = values.slice(0, 3)
+    const beyond = recent3.filter(v => Math.abs(v - stats.mean) > twoSigma).length
+    if (beyond >= 2) {
+      check.alert = true
+      check.reason = `2 of 3 recent points beyond 2σ`
+    }
+  }
+
   return check
 }
 
