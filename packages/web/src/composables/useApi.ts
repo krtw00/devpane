@@ -25,23 +25,42 @@ export type TaskLog = {
   timestamp: string
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json()
+function fetchJson<T>(path: string): Promise<T> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 10_000)
+
+  const p = fetch(`${BASE}${path}`, { signal: controller.signal }).then(
+    res => {
+      clearTimeout(timeoutId)
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return res.json() as Promise<T>
+    },
+    err => {
+      clearTimeout(timeoutId)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('サーバーへの接続がタイムアウトしました (timeout)')
+      }
+      throw err
+    },
+  )
+
+  // prevent unhandled rejection when abort fires during fake-timer advancement
+  p.catch(() => {})
+
+  return p
 }
 
 export function useTasks() {
   const tasks = ref<Task[]>([])
   const loading = ref(false)
 
-  async function refresh() {
+  function refresh() {
     loading.value = true
-    try {
-      tasks.value = await fetchJson<Task[]>('/tasks')
-    } finally {
-      loading.value = false
-    }
+    const p = fetchJson<Task[]>('/tasks')
+      .then(data => { tasks.value = data })
+      .finally(() => { loading.value = false })
+    p.catch(() => {})
+    return p
   }
 
   return { tasks, loading, refresh }
@@ -78,7 +97,7 @@ export type PipelineStats = {
   active_improvements: number
 }
 
-export async function fetchPipelineStats(): Promise<PipelineStats> {
+export function fetchPipelineStats(): Promise<PipelineStats> {
   return fetchJson<PipelineStats>('/stats/pipeline')
 }
 
@@ -140,7 +159,7 @@ export type SchedulerStatus = {
   pmConsecutiveFailures: number
 }
 
-export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
+export function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return fetchJson<SchedulerStatus>('/scheduler/status')
 }
 
