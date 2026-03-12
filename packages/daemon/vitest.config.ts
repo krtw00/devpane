@@ -8,5 +8,6 @@ export default defineConfig({
       ".worktrees/**",
       "node_modules/**",
     ],
+    clearMocks: true,
   },
 })
