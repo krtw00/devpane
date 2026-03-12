@@ -204,7 +204,7 @@ export async function runPm(): Promise<PmOutput> {
 export function ingestPmTasks(output: PmOutput): Task[] {
   const created: Task[] = []
   for (const t of output.tasks) {
-    const task = createTask(t.title, t.description, "pm", t.priority)
+    const task = createTask(t.title, t.description, "pm", t.priority, null, t.constraints ?? null)
     created.push(task)
   }
   return created

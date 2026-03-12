@@ -9,6 +9,7 @@ export type Task = {
   id: string // ULID
   title: string
   description: string
+  constraints: string | null // JSON stringified string[]
   status: TaskStatus
   priority: number
   parent_id: string | null
@@ -52,7 +53,7 @@ export type TaskLog = {
 
 // PM output — PMが返すタスクリスト
 export type PmOutput = {
-  tasks: { title: string; description: string; priority: number }[]
+  tasks: { title: string; description: string; priority: number; constraints?: string[] }[]
   reasoning: string
 }
 
