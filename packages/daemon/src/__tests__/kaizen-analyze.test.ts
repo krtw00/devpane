@@ -6,10 +6,10 @@ import { initDb, closeDb, getDb, createTask, startTask } from "../db.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
-// Mock execFileSync to simulate claude CLI
-const mockExecFileSync = vi.fn()
-vi.mock("node:child_process", () => ({
-  execFileSync: (...args: unknown[]) => mockExecFileSync(...args),
+// Mock spawnClaude to simulate claude CLI
+const mockSpawnClaude = vi.fn()
+vi.mock("../claude.js", () => ({
+  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
 }))
 
 function createFailedTask() {
@@ -32,6 +32,8 @@ const VALID_ANALYSIS = JSON.stringify({
     { target: "gate2", action: "add_check", description: "制約条件のテストカバレッジを検証" },
   ],
 })
+
+const VALID_ANALYSIS_WITH_FENCES = "```json\n" + VALID_ANALYSIS + "\n```"
 
 const INVALID_ANALYSIS_BAD_ROOT_CAUSE = JSON.stringify({
   analysis: {
@@ -73,22 +75,21 @@ describe("kaizen analyze() with LLM call", () => {
 
   it("returns null when no failed tasks exist", async () => {
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
     expect(result).toBeNull()
-    expect(mockExecFileSync).not.toHaveBeenCalled()
+    expect(mockSpawnClaude).not.toHaveBeenCalled()
   })
 
-  it("calls claude CLI with failed task context and returns parsed analysis", async () => {
-    mockExecFileSync.mockReturnValue(VALID_ANALYSIS)
+  it("calls spawnClaude with failed task context and returns parsed analysis", async () => {
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
 
     for (let i = 0; i < 3; i++) createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
-    expect(mockExecFileSync).toHaveBeenCalledOnce()
-    const [cmd, args] = mockExecFileSync.mock.calls[0]
-    expect(cmd).toBe("claude")
+    expect(mockSpawnClaude).toHaveBeenCalledOnce()
+    const [args] = mockSpawnClaude.mock.calls[0]
     expect(args).toContain("-p")
 
     expect(result).not.toBeNull()
@@ -100,76 +101,74 @@ describe("kaizen analyze() with LLM call", () => {
   })
 
   it("returns null when claude output fails Zod validation (bad root_cause)", async () => {
-    mockExecFileSync.mockReturnValue(INVALID_ANALYSIS_BAD_ROOT_CAUSE)
+    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_BAD_ROOT_CAUSE)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
-    expect(mockExecFileSync).toHaveBeenCalledOnce()
+    expect(mockSpawnClaude).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
   it("returns null when improvements array is empty (min 1 required)", async () => {
-    mockExecFileSync.mockReturnValue(INVALID_ANALYSIS_EMPTY_IMPROVEMENTS)
+    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_EMPTY_IMPROVEMENTS)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
-    expect(mockExecFileSync).toHaveBeenCalledOnce()
+    expect(mockSpawnClaude).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
   it("returns null when claude returns non-JSON output", async () => {
-    mockExecFileSync.mockReturnValue(INVALID_ANALYSIS_NOT_JSON)
+    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_NOT_JSON)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
-    expect(mockExecFileSync).toHaveBeenCalledOnce()
+    expect(mockSpawnClaude).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
   it("returns null when claude output has missing required fields", async () => {
-    mockExecFileSync.mockReturnValue(INVALID_ANALYSIS_MISSING_FIELDS)
+    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_MISSING_FIELDS)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
-    expect(mockExecFileSync).toHaveBeenCalledOnce()
+    expect(mockSpawnClaude).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
-  it("returns null when claude CLI throws (process error)", async () => {
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error("claude: command not found")
-    })
+  it("returns null when spawnClaude rejects (process error)", async () => {
+    mockSpawnClaude.mockRejectedValue(new Error("claude: command not found"))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
-    expect(mockExecFileSync).toHaveBeenCalledOnce()
+    expect(mockSpawnClaude).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
   it("includes failed task info in the prompt sent to claude", async () => {
-    mockExecFileSync.mockReturnValue(VALID_ANALYSIS)
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    analyze()
+    await analyze()
 
-    const [, args] = mockExecFileSync.mock.calls[0]
+    const [args] = mockSpawnClaude.mock.calls[0]
     const promptFlagIndex = args.indexOf("-p")
     expect(promptFlagIndex).toBeGreaterThanOrEqual(0)
     const prompt = args[promptFlagIndex + 1]
@@ -187,39 +186,39 @@ describe("kaizen analyze() with LLM call", () => {
         { target: "gate1", action: "add_check", description: "fix" },
       ],
     })
-    mockExecFileSync.mockReturnValue(tooLongChain)
+    mockSpawnClaude.mockResolvedValue(tooLongChain)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    const result = analyze()
+    const result = await analyze()
 
     expect(result).toBeNull()
   })
 
-  it("passes timeout option to execFileSync", async () => {
-    mockExecFileSync.mockReturnValue(VALID_ANALYSIS)
+  it("passes timeout to spawnClaude", async () => {
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    analyze()
+    await analyze()
 
-    const callArgs = mockExecFileSync.mock.calls[0]
-    const options = callArgs[callArgs.length - 1]
-    expect(options).toHaveProperty("timeout")
-    expect(options.timeout).toBeGreaterThan(0)
+    const callArgs = mockSpawnClaude.mock.calls[0]
+    // spawnClaude(args, cwd, timeoutMs) — third argument is timeout
+    const timeoutMs = callArgs[2]
+    expect(timeoutMs).toBeGreaterThan(0)
   })
 
   it("includes all failed tasks in prompt when multiple failures exist", async () => {
-    mockExecFileSync.mockReturnValue(VALID_ANALYSIS)
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
 
     const ids = [createFailedTask(), createFailedTask(), createFailedTask()]
 
     const { analyze } = await import("../kaizen.js")
-    analyze()
+    await analyze()
 
-    const [, args] = mockExecFileSync.mock.calls[0]
+    const [args] = mockSpawnClaude.mock.calls[0]
     const promptFlagIndex = args.indexOf("-p")
     const prompt = args[promptFlagIndex + 1]
     // All 3 failed tasks should be referenced in the prompt
@@ -228,16 +227,32 @@ describe("kaizen analyze() with LLM call", () => {
     }
   })
 
-  it("passes encoding option as utf-8 to execFileSync", async () => {
-    mockExecFileSync.mockReturnValue(VALID_ANALYSIS)
+  it("strips markdown code fences from claude output before parsing", async () => {
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS_WITH_FENCES)
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
-    analyze()
+    const result = await analyze()
 
-    const callArgs = mockExecFileSync.mock.calls[0]
-    const options = callArgs[callArgs.length - 1]
-    expect(options).toHaveProperty("encoding", "utf-8")
+    expect(result).not.toBeNull()
+    expect(result!.analysis.top_failure).toBe("test_gap")
+  })
+
+  it("limits input tasks to a maximum of 20", async () => {
+    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+
+    // Create 25 failed tasks — only 20 should appear in the prompt
+    for (let i = 0; i < 25; i++) createFailedTask()
+
+    const { analyze } = await import("../kaizen.js")
+    await analyze()
+
+    const [args] = mockSpawnClaude.mock.calls[0]
+    const promptFlagIndex = args.indexOf("-p")
+    const prompt: string = args[promptFlagIndex + 1]
+    // Count task entries in prompt (each line starts with "- [")
+    const taskLines = prompt.split("\n").filter((l: string) => l.startsWith("- ["))
+    expect(taskLines).toHaveLength(20)
   })
 })

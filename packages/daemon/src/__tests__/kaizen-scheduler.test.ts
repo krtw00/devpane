@@ -15,9 +15,9 @@ vi.mock("../events.js", () => ({
   safeEmit: vi.fn(() => true),
 }))
 
-// Mock kaizen.analyze() — TDD: implementation doesn't exist yet
+// Mock kaizen.analyze() — returns a Promise (async)
 vi.mock("../kaizen.js", () => ({
-  analyze: vi.fn(() => ({
+  analyze: vi.fn(() => Promise.resolve({
     analysis: {
       top_failure: "test_gap",
       frequency: "3/10",
@@ -34,7 +34,7 @@ type KaizenPluginExports = {
   resetKaizenCounter: () => void
   setKaizenCounter: (n: number) => void
   getKaizenCounter: () => number
-  checkKaizenAnalysis: () => void
+  checkKaizenAnalysis: () => Promise<void>
 }
 
 function createFinishedTask(status: "done" | "failed", finishedAt: string, costUsd = 0.1) {
@@ -84,7 +84,7 @@ describe("kaizen scheduler integration", () => {
     for (let i = 0; i < 5; i++) createFinishedTask("failed", "2024-07-01T00:00:00.000Z")
 
     mod.setKaizenCounter(mod.KAIZEN_THRESHOLD - 1)
-    mod.checkKaizenAnalysis()
+    await mod.checkKaizenAnalysis()
     expect(analyze).not.toHaveBeenCalled()
   })
 
@@ -95,7 +95,7 @@ describe("kaizen scheduler integration", () => {
     for (let i = 0; i < 5; i++) createFinishedTask("failed", "2024-07-01T00:00:00.000Z")
 
     mod.setKaizenCounter(mod.KAIZEN_THRESHOLD)
-    mod.checkKaizenAnalysis()
+    await mod.checkKaizenAnalysis()
     expect(analyze).toHaveBeenCalled()
     expect(mod.getKaizenCounter()).toBe(0)
   })
@@ -108,7 +108,7 @@ describe("kaizen scheduler integration", () => {
     for (let i = 0; i < 10; i++) createFinishedTask("done", "2024-07-01T00:00:00.000Z")
 
     mod.setKaizenCounter(mod.KAIZEN_THRESHOLD)
-    mod.checkKaizenAnalysis()
+    await mod.checkKaizenAnalysis()
     expect(analyze).not.toHaveBeenCalled()
     expect(mod.getKaizenCounter()).toBe(0)
   })
@@ -119,7 +119,7 @@ describe("kaizen scheduler integration", () => {
     for (let i = 0; i < 5; i++) createFinishedTask("failed", "2024-07-01T00:00:00.000Z")
 
     mod.setKaizenCounter(mod.KAIZEN_THRESHOLD)
-    mod.checkKaizenAnalysis()
+    await mod.checkKaizenAnalysis()
 
     const db = getDb()
     const improvements = db.prepare(`SELECT * FROM improvements WHERE status = 'active'`).all() as Array<{
@@ -143,7 +143,7 @@ describe("kaizen scheduler integration", () => {
     for (let i = 0; i < 5; i++) createFinishedTask("failed", "2024-07-01T00:00:00.000Z")
 
     mod.setKaizenCounter(mod.KAIZEN_THRESHOLD)
-    mod.checkKaizenAnalysis()
+    await mod.checkKaizenAnalysis()
 
     const appliedEvents = emittedEvents.filter(e => e.type === "improvement.applied")
     expect(appliedEvents.length).toBeGreaterThanOrEqual(1)
@@ -160,7 +160,7 @@ describe("kaizen scheduler integration", () => {
     for (let i = 0; i < 5; i++) createFinishedTask("failed", "2024-07-01T00:00:00.000Z")
 
     mod.setKaizenCounter(mod.KAIZEN_THRESHOLD)
-    mod.checkKaizenAnalysis()
+    await mod.checkKaizenAnalysis()
 
     const db = getDb()
     const events = db.prepare(

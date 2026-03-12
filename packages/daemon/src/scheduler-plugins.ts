@@ -57,7 +57,7 @@ export function getKaizenCounter(): number {
   return kaizenCompletions
 }
 
-export function checkKaizenAnalysis(): void {
+export async function checkKaizenAnalysis(): Promise<void> {
   if (kaizenCompletions < KAIZEN_THRESHOLD) return
 
   kaizenCompletions = 0
@@ -65,7 +65,7 @@ export function checkKaizenAnalysis(): void {
   const failures = getFailedTasks()
   if (failures.length === 0) return
 
-  const result = analyze()
+  const result = await analyze()
   if (!result) return
 
   const db = getDb()
@@ -85,9 +85,9 @@ export function checkKaizenAnalysis(): void {
 }
 
 // Kaizen hook
-registerHook("task.completed", () => {
+registerHook("task.completed", async () => {
   kaizenCompletions++
-  checkKaizenAnalysis()
+  await checkKaizenAnalysis()
 })
 
 // SPC hook
