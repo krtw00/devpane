@@ -9,6 +9,9 @@ import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { emit } from "./events.js"
 import { runGate3 } from "./gate.js"
+import { runGate1 } from "./gate1.js"
+import { runTester } from "./tester.js"
+import { runGate2 } from "./gate2.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 
 function sleep(ms: number): Promise<void> {
@@ -99,6 +102,46 @@ async function executeTask(task: Task): Promise<void> {
   startTask(task.id, workerId)
   emit({ type: "task.started", taskId: task.id, workerId })
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
+
+  // Gate 1: PMタスク品質チェック
+  const gate1 = runGate1(task)
+  if (gate1.verdict === "kill") {
+    console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
+    finishTask(task.id, "failed", JSON.stringify({ gate1 }))
+    emit({ type: "task.failed", taskId: task.id, rootCause: gate1.failure?.root_cause ?? "spec_ambiguity" })
+    broadcast("task:updated", { id: task.id, status: "failed" })
+    return
+  }
+  if (gate1.verdict === "recycle") {
+    console.log(`[scheduler] Gate 1 RECYCLE task ${task.id}: ${gate1.reasons.join("; ")}`)
+    requeueTask(task.id)
+    appendLog(task.id, "system", `[gate1] recycled: ${gate1.reasons.join("; ")}`)
+    emit({ type: "task.started", taskId: task.id, workerId: "requeued" })
+    broadcast("task:updated", { id: task.id, status: "pending" })
+    return
+  }
+
+  // Tester: テスト基準生成
+  const testerResult = runTester(task)
+  console.log(`[scheduler] Tester generated ${testerResult.criteria.length} criteria for task ${task.id}`)
+
+  // Gate 2: テスト基準照合
+  const gate2 = runGate2(task, testerResult)
+  if (gate2.verdict === "kill") {
+    console.log(`[scheduler] Gate 2 KILL task ${task.id}: ${gate2.reasons.join("; ")}`)
+    finishTask(task.id, "failed", JSON.stringify({ gate2 }))
+    emit({ type: "task.failed", taskId: task.id, rootCause: gate2.failure?.root_cause ?? "test_gap" })
+    broadcast("task:updated", { id: task.id, status: "failed" })
+    return
+  }
+  if (gate2.verdict === "recycle") {
+    console.log(`[scheduler] Gate 2 RECYCLE task ${task.id}: ${gate2.reasons.join("; ")}`)
+    requeueTask(task.id)
+    appendLog(task.id, "system", `[gate2] recycled: ${gate2.reasons.join("; ")}`)
+    emit({ type: "task.started", taskId: task.id, workerId: "requeued" })
+    broadcast("task:updated", { id: task.id, status: "pending" })
+    return
+  }
 
   let worktreePath: string
   try {
