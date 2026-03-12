@@ -51,12 +51,15 @@ watch(() => route.query, () => {
 })
 
 const pipelineStats = ref<PipelineStats | null>(null)
+const pipelineError = ref<string | null>(null)
 
 async function refreshPipelineStats() {
   try {
     pipelineStats.value = await fetchPipelineStats()
-  } catch {
-    // silently ignore - stats card will just not show
+    pipelineError.value = null
+  } catch (err) {
+    pipelineStats.value = null
+    pipelineError.value = err instanceof Error ? err.message : 'stats取得に失敗しました'
   }
 }
 
@@ -211,6 +214,10 @@ function timeAgo(iso: string | null): string {
         daemon connection lost — reconnecting...
       </div>
     </header>
+
+    <div v-if="pipelineError" class="pipeline-error">
+      {{ pipelineError }}
+    </div>
 
     <div v-if="pipelineStats" class="pipeline-cards">
       <div :class="['pipeline-card', passRateColor(pipelineStats.gate3_pass_rate)]">
@@ -451,6 +458,16 @@ h1 {
 .conn-banner {
   margin-top: 0.5rem;
   padding: 0.4rem 0.75rem;
+  background: #f8514920;
+  border: 1px solid #f8514960;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #f85149;
+}
+
+.pipeline-error {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
   background: #f8514920;
   border: 1px solid #f8514960;
   border-radius: 6px;
