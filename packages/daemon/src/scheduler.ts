@@ -429,6 +429,14 @@ export async function startScheduler(): Promise<void> {
       continue
     }
 
+    // Active Hours: 稼働時間外ならタスク実行をスキップ
+    if (!isWithinActiveHours(config.ACTIVE_HOURS)) {
+      emit({ type: "scheduler.outside_hours" })
+      console.log(`[scheduler] outside active hours, idling ${config.IDLE_INTERVAL_SEC}s`)
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      continue
+    }
+
     // WIP制限: 直列実行（WIP=1）— PRマージ後にmain pullしてから次タスク
     const MAX_OPEN_PRS = 1
     const openPrs = countOpenPrs()
