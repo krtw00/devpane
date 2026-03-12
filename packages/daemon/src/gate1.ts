@@ -15,7 +15,6 @@ export type Gate1Result = {
 }
 
 const MIN_DESCRIPTION_LENGTH = 20
-const MAX_RETRIES = 2
 const GATE1_TIMEOUT_MS = 60000
 
 // Phase 1: ルールベース（高速・無料）
@@ -24,8 +23,8 @@ export function runGate1Rules(task: Task): Gate1Result {
 
   // Rule 0: リトライ上限超過 → Worker実行前にkill
   const retryCount = getRetryCount(task.id)
-  if (retryCount >= MAX_RETRIES) {
-    reasons.push(`max retries exceeded (${retryCount}/${MAX_RETRIES})`)
+  if (retryCount >= config.MAX_RETRIES) {
+    reasons.push(`max retries exceeded (${retryCount}/${config.MAX_RETRIES})`)
     return { verdict: "kill", reasons }
   }
 
