@@ -292,6 +292,9 @@ export async function executeTask(task: Task): Promise<void> {
           }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)
+          finishTask(task.id, "failed", JSON.stringify({ ...facts, pr_creation_failed: true }))
+          emit({ type: "pr.failed", taskId: task.id })
+          broadcast("task:updated", { id: task.id, status: "failed" })
         }
       }
 
