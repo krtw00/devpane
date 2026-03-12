@@ -10,6 +10,7 @@ function prepareStmt() {
   return {
     insert: db.prepare(`INSERT INTO spc_metrics (id, task_id, metric, value, recorded_at) VALUES (?, ?, ?, ?, ?)`),
     recentByMetric: db.prepare(`SELECT value FROM spc_metrics WHERE metric = ? ORDER BY recorded_at DESC LIMIT ?`),
+    recentTimeSeries: db.prepare(`SELECT value, recorded_at FROM spc_metrics WHERE metric = ? ORDER BY recorded_at DESC LIMIT ?`),
   }
 }
 
@@ -99,6 +100,26 @@ export function checkMetric(metric: string, currentValue: number): SpcCheck | nu
   }
 
   return check
+}
+
+export type SpcTimeSeriesPoint = { value: number; recorded_at: string }
+
+export function getMetricTimeSeries(metric: string, limit: number = WINDOW_SIZE): SpcTimeSeriesPoint[] {
+  const rows = getStmt().recentTimeSeries.all(metric, limit) as SpcTimeSeriesPoint[]
+  return rows.reverse()
+}
+
+export function getMetricSummary(metric: string): { mean: number; ucl: number; lcl: number; lastAlert: string | null } | null {
+  const values = getRecentValues(metric)
+  const stats = calcStats(values)
+  if (!stats) return null
+  const ucl = stats.mean + 3 * stats.stddev
+  const lcl = Math.max(0, stats.mean - 3 * stats.stddev)
+  const db = getDb()
+  const row = db.prepare(
+    `SELECT payload FROM agent_events WHERE json_extract(payload, '$.type') = 'spc.alert' AND json_extract(payload, '$.metric') = ? ORDER BY created_at DESC LIMIT 1`
+  ).get(metric) as { payload: string } | undefined
+  return { mean: stats.mean, ucl, lcl, lastAlert: row ? JSON.parse(row.payload).value : null }
 }
 
 export function checkAllMetrics(_taskId: string, costUsd: number, executionMs: number, diffSize: number): SpcCheck[] {

@@ -3,6 +3,7 @@ import Dashboard from '../views/Dashboard.vue'
 import TaskDetail from '../views/TaskDetail.vue'
 import CostDashboard from '../views/CostDashboard.vue'
 import EventsLog from '../views/EventsLog.vue'
+import MetricsDashboard from '../views/MetricsDashboard.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -11,5 +12,6 @@ export const router = createRouter({
     { path: '/tasks/:id', component: TaskDetail, props: true },
     { path: '/cost', component: CostDashboard },
     { path: '/events', component: EventsLog },
+    { path: '/metrics', component: MetricsDashboard },
   ],
 })
