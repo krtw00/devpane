@@ -132,7 +132,7 @@ function taskToPmOutput(task: Task): PmOutput {
   }
 }
 
-async function executeTask(task: Task): Promise<void> {
+export async function executeTask(task: Task): Promise<void> {
   // Gate 1: 方針チェック（Worker実行前に弾く）
   const gate1 = await runGate1(task)
   if (gate1.verdict === "kill") {
