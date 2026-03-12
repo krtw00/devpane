@@ -300,6 +300,39 @@ describe("pipeline e2e: executeTask", () => {
     }))
   })
 
+  it("PR作成失敗(null返却) → タスクがfailedになる", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockCreatePullRequest.mockReturnValue(null)
+    const task = makeTask()
+
+    await executeTask(task)
+
+    // PR作成は試みられた
+    expect(mockCreatePullRequest).toHaveBeenCalled()
+    // 自動マージは呼ばれない
+    expect(mockAutoMergePr).not.toHaveBeenCalled()
+
+    // タスクがfailedになっている
+    const { getTask } = await import("../db.js")
+    const updated = getTask(task.id)
+    expect(updated?.status).toBe("failed")
+    expect(updated?.result).toContain("pr_creation_failed")
+  })
+
+  it("PR作成失敗 → pr.failedイベントが記録される", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockCreatePullRequest.mockReturnValue(null)
+    const task = makeTask()
+
+    await executeTask(task)
+
+    const prFailed = emittedEvents.find(e => e.type === "pr.failed")
+    expect(prFailed).toBeTruthy()
+    if (prFailed && "taskId" in prFailed) {
+      expect(prFailed.taskId).toBe(task.id)
+    }
+  })
+
   it("Worktree作成失敗 → タスクがfailed（Tester/Workerは呼ばれない）", async () => {
     const { executeTask } = await import("../scheduler.js")
     mockCreateWorktree.mockImplementation(() => { throw new Error("disk full") })
