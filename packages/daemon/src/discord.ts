@@ -23,6 +23,8 @@ function buildContent(event: AgentEvent): string | null {
       const title = task?.title ?? event.taskId
       return `🛑 **Gate Kill**: ${title}\n理由: ${event.reason}`
     }
+    case "improvement.reverted":
+      return `⏪ **改善リバート**: ${event.improvementId}\n理由: ${event.reason}`
     default:
       return null
   }

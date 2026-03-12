@@ -148,6 +148,26 @@ describe("effect-measure", () => {
     expect(ids).toContain(id2)
   })
 
+  it("sets status to 'permanent' when verdict is effective", () => {
+    const appliedAt = "2024-06-01T00:00:00.000Z"
+    const id = insertImprovement({ applied_at: appliedAt })
+
+    // Before: 5 failed out of 10 = 50%
+    for (let i = 0; i < 5; i++) createFinishedTask("done", "2024-05-01T00:00:00.000Z")
+    for (let i = 0; i < 5; i++) createFinishedTask("failed", "2024-05-01T00:00:00.000Z")
+
+    // After: 0 failed out of 10 = 0%
+    for (let i = 0; i < 10; i++) createFinishedTask("done", "2024-07-01T00:00:00.000Z")
+
+    const result = measureEffect(id)!
+    expect(result.verdict).toBe("effective")
+
+    const db = getDb()
+    const imp = db.prepare(`SELECT status, verdict FROM improvements WHERE id = ?`).get(id) as { status: string; verdict: string }
+    expect(imp.status).toBe("permanent")
+    expect(imp.verdict).toBe("effective")
+  })
+
   it("emits improvement.reverted event for harmful verdict", () => {
     const appliedAt = "2024-06-01T00:00:00.000Z"
     const id = insertImprovement({ applied_at: appliedAt })
