@@ -1,7 +1,5 @@
 import { ulid } from "ulid"
 import { getDb } from "./db.js"
-import { emit } from "./events.js"
-
 let stmt: ReturnType<typeof prepareStmt> | null = null
 let stmtDb: ReturnType<typeof getDb> | null = null
 
@@ -92,10 +90,6 @@ export function checkMetric(metric: string, currentValue: number): SpcCheck | nu
       check.alert = true
       check.reason = `7 consecutive points ${allAbove ? "above" : "below"} mean`
     }
-  }
-
-  if (check.alert) {
-    emit({ type: "spc.alert", metric, value: currentValue, ucl })
   }
 
   return check
