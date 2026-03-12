@@ -82,6 +82,31 @@ export async function fetchEvents(limit = 100, type?: string): Promise<AgentEven
   return fetchJson<AgentEvent[]>(`/events?${params}`)
 }
 
+export type Improvement = {
+  id: string
+  trigger_analysis: string
+  target: string
+  action: string
+  applied_at: string
+  status: 'active' | 'reverted' | 'permanent'
+  before_metrics: string | null
+  after_metrics: string | null
+  verdict: string | null
+}
+
+export async function fetchImprovements(status?: string): Promise<Improvement[]> {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  const qs = params.toString()
+  return fetchJson<Improvement[]>(`/improvements${qs ? `?${qs}` : ''}`)
+}
+
+export async function revertImprovement(id: string): Promise<Improvement> {
+  const res = await fetch(`${BASE}/improvements/${id}/revert`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 export function useTaskDetail(id: string) {
   const task = ref<Task | null>(null)
   const logs = ref<TaskLog[]>([])
