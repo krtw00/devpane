@@ -153,6 +153,20 @@ export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; del
   }
 }
 
+export function countOpenPrs(): number {
+  try {
+    const result = execFileSync("gh", ["pr", "list", "--state", "open", "--json", "number"], {
+      cwd: config.PROJECT_ROOT,
+      encoding: "utf-8",
+      timeout: 15000,
+    }).trim()
+    const prs = JSON.parse(result)
+    return Array.isArray(prs) ? prs.length : 0
+  } catch {
+    return 0
+  }
+}
+
 export function getWorktreeDiff(taskId: string): { filesChanged: string[]; additions: number; deletions: number } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {

@@ -1,13 +1,14 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
-import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees } from "./worktree.js"
+import { createWorktree, removeWorktree, createPullRequest, getWorktreeNewAndDeleted, pruneWorktrees, countOpenPrs } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
 import { runPm, ingestPmTasks } from "./pm.js"
 import { broadcast } from "./ws.js"
 import { remember, forget, findSimilar } from "./memory.js"
 import { emit, safeEmit } from "./events.js"
+import { runGate1 } from "./gate1.js"
 import { runGate3 } from "./gate.js"
 import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { circuitBreaker } from "./circuit-breaker.js"
@@ -97,6 +98,16 @@ async function callPm(): Promise<Task[]> {
 }
 
 async function executeTask(task: Task): Promise<void> {
+  // Gate 1: 方針チェック（Worker実行前に弾く）
+  const gate1 = runGate1(task)
+  if (gate1.verdict === "kill") {
+    console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
+    finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
+    emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
+    broadcast("task:updated", { id: task.id, status: "failed" })
+    return
+  }
+
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
   startTask(task.id, workerId)
@@ -269,6 +280,15 @@ export async function startScheduler(): Promise<void> {
       const backoff = circuitBreaker.getBackoffSec()
       console.log(`[scheduler] circuit open, skipping cycle (backoff: ${backoff}s)`)
       await sleep(backoff * 1000)
+      continue
+    }
+
+    // WIP制限: 未マージPR数が上限以上ならスキップ
+    const MAX_OPEN_PRS = 5
+    const openPrs = countOpenPrs()
+    if (openPrs >= MAX_OPEN_PRS) {
+      console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${MAX_OPEN_PRS}), waiting...`)
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
       continue
     }
 
