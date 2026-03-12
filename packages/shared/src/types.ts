@@ -112,4 +112,9 @@ export type Config = {
   MAX_RETRIES: number
   MAX_DIFF_SIZE: number
   ACTIVE_HOURS: ActiveHours | null
+  MAX_OPEN_PRS: number
+  MIN_DESCRIPTION_LENGTH: number
+  EFFECT_MEASURE_THRESHOLD: number
+  KAIZEN_THRESHOLD: number
+  MEMORY_CLEANUP_THRESHOLD: number
 }

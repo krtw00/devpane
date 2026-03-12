@@ -7,9 +7,10 @@ import { getActiveImprovements, getFailedTasks, getDb, insertAgentEvent } from "
 import { measureAllActive } from "./effect-measure.js"
 import { analyze } from "./kaizen.js"
 import { ulid } from "ulid"
+import { config } from "./config.js"
 
 let taskCompletionsSinceLastMeasure = 0
-export const EFFECT_MEASURE_THRESHOLD = 10
+export const EFFECT_MEASURE_THRESHOLD = config.EFFECT_MEASURE_THRESHOLD
 
 export function resetEffectMeasureCounter(): void {
   taskCompletionsSinceLastMeasure = 0
@@ -43,7 +44,7 @@ export function checkEffectMeasurement(): void {
 // --- Memory cleanup (古いlessonのアーカイブ) ---
 
 let memoryCleanupCompletions = 0
-export const MEMORY_CLEANUP_THRESHOLD = 10
+export const MEMORY_CLEANUP_THRESHOLD = config.MEMORY_CLEANUP_THRESHOLD
 
 export function resetMemoryCleanupCounter(): void {
   memoryCleanupCompletions = 0
@@ -56,7 +57,7 @@ export function getMemoryCleanupCounter(): number {
 // --- Kaizen (なぜなぜ分析) ---
 
 let kaizenCompletions = 0
-export const KAIZEN_THRESHOLD = 10
+export const KAIZEN_THRESHOLD = config.KAIZEN_THRESHOLD
 
 export function resetKaizenCounter(): void {
   kaizenCompletions = 0
