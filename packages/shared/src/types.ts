@@ -104,4 +104,6 @@ export type Config = {
   WORKER_CONCURRENCY: number
   DB_PATH: string
   API_PORT: number
+  MAX_RETRIES: number
+  MAX_DIFF_SIZE: number
 }
