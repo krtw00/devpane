@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
+import { appendLog } from "./db.js"
+import { emit } from "./events.js"
 
 export type TesterResult = {
   testFiles: string[]
@@ -215,17 +217,35 @@ export function runTester(spec: PmOutput, worktreePath: string): Promise<TesterR
       lastActivity = Date.now()
     })
 
+    let timedOut = false
+    let sigkillCheck: ReturnType<typeof setInterval> | undefined
     const idleCheck = setInterval(() => {
       if (Date.now() - lastActivity > config.WORKER_TIMEOUT_MS) {
+        timedOut = true
+        appendLog("tester", "tester", `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`)
         proc.kill("SIGTERM")
         clearInterval(idleCheck)
+
+        const sigTermAt = Date.now()
+        sigkillCheck = setInterval(() => {
+          if (Date.now() - sigTermAt > 5_000) {
+            clearInterval(sigkillCheck!)
+            if (!proc.killed) {
+              proc.kill("SIGKILL")
+            }
+          }
+        }, 1_000)
       }
     }, 30_000)
 
     proc.on("close", (code) => {
       activeProcs.delete(proc)
       clearInterval(idleCheck)
+      if (sigkillCheck) clearInterval(sigkillCheck)
       rl.close()
+      if (timedOut) {
+        emit({ type: "task.failed", taskId: "tester", rootCause: "timeout" })
+      }
       resolve({
         testFiles,
         exit_code: code ?? 1,
@@ -235,6 +255,7 @@ export function runTester(spec: PmOutput, worktreePath: string): Promise<TesterR
     proc.on("error", (err) => {
       activeProcs.delete(proc)
       clearInterval(idleCheck)
+      if (sigkillCheck) clearInterval(sigkillCheck)
       rl.close()
       reject(err)
     })
