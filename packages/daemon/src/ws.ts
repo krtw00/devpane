@@ -28,7 +28,11 @@ export function broadcast(type: string, payload: unknown): void {
   const message = JSON.stringify({ type, payload })
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(message)
+      try {
+        client.send(message)
+      } catch (err) {
+        console.warn("[ws] send failed:", err)
+      }
     }
   }
 }
