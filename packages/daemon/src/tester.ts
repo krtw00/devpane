@@ -223,7 +223,7 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
     const idleCheck = setInterval(() => {
       if (Date.now() - lastActivity > config.WORKER_TIMEOUT_MS) {
         timedOut = true
-        appendLog("tester", "tester", `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`)
+        appendLog(taskId ?? "tester", "tester", `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`)
         proc.kill("SIGTERM")
         clearInterval(idleCheck)
 
