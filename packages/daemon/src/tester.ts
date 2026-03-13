@@ -130,7 +130,7 @@ export function parseTesterOutput(stdout: string): string[] {
   return testFiles
 }
 
-export function runTester(spec: PmOutput, worktreePath: string): Promise<TesterResult> {
+export function runTester(spec: PmOutput, worktreePath: string, taskId?: string): Promise<TesterResult> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env }
     delete env.CLAUDECODE
@@ -244,7 +244,7 @@ export function runTester(spec: PmOutput, worktreePath: string): Promise<TesterR
       if (sigkillCheck) clearInterval(sigkillCheck)
       rl.close()
       if (timedOut) {
-        emit({ type: "task.failed", taskId: "tester", rootCause: "timeout" })
+        emit({ type: "task.failed", taskId: taskId ?? "tester", rootCause: "timeout" })
       }
       resolve({
         testFiles,
