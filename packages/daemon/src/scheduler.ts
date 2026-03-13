@@ -12,9 +12,10 @@ import { runGate2 } from "./gate2.js"
 import { runGate3 } from "./gate.js"
 import { runTester } from "./tester.js"
 import { circuitBreaker } from "./circuit-breaker.js"
-import { runPrAgent } from "./pr-agent.js"
 import { runHooks, type TaskCompletedData } from "./scheduler-hooks.js"
+import { sendMorningReport } from "./morning-report.js"
 import { remember } from "./memory.js"
+import { recordTaskMetrics } from "./spc.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
 
@@ -73,13 +74,57 @@ let rateLimitHits = 0
 let pmConsecutiveFailures = 0
 let currentTaskPromise: Promise<void> | null = null
 
+// --- Agent state tracking for Shogun UI ---
+export type AgentStatus = "idle" | "running"
+export type PipelineStageLabel = "pm" | "gate1" | "tester" | "gate2" | "worker" | "gate3" | "pr" | null
+
+let pmStatus: AgentStatus = "idle"
+let workerStatus: AgentStatus = "idle"
+let currentTaskId: string | null = null
+let currentTaskTitle: string | null = null
+let currentStage: PipelineStageLabel = null
+let currentTaskStartedAt: string | null = null
+
+function resetWorkerState(): void {
+  workerStatus = "idle"
+  currentTaskId = null
+  currentTaskTitle = null
+  currentStage = null
+  currentTaskStartedAt = null
+}
+
+export function setCurrentStage(stage: PipelineStageLabel, taskId?: string, taskTitle?: string): void {
+  currentStage = stage
+  if (taskId !== undefined) currentTaskId = taskId
+  if (taskTitle !== undefined) currentTaskTitle = taskTitle
+  if (stage) {
+    broadcast("scheduler:stage", { stage, taskId: currentTaskId, taskTitle: currentTaskTitle })
+  }
+}
+
 // Re-export from scheduler-plugins for backward compatibility
 export { EFFECT_MEASURE_THRESHOLD, checkEffectMeasurement, resetEffectMeasureCounter, setEffectMeasureCounter, getEffectMeasureCounter } from "./scheduler-plugins.js"
 export { KAIZEN_THRESHOLD, checkKaizenAnalysis, resetKaizenCounter, setKaizenCounter, getKaizenCounter } from "./scheduler-plugins.js"
 import { getEffectMeasureCounter } from "./scheduler-plugins.js"
 
 export function getSchedulerState() {
-  return { alive, rateLimitHits, pmConsecutiveFailures, taskCompletionsSinceLastMeasure: getEffectMeasureCounter() }
+  return {
+    alive,
+    paused,
+    rateLimitHits,
+    pmConsecutiveFailures,
+    taskCompletionsSinceLastMeasure: getEffectMeasureCounter(),
+    withinActiveHours: isWithinActiveHours(config.ACTIVE_HOURS),
+    activeHours: config.ACTIVE_HOURS,
+    pm: { status: pmStatus },
+    worker: {
+      status: workerStatus,
+      taskId: currentTaskId,
+      taskTitle: currentTaskTitle,
+      stage: currentStage,
+      startedAt: currentTaskStartedAt,
+    },
+  }
 }
 
 /** @internal テスト用 */
@@ -121,8 +166,10 @@ export async function stopScheduler(): Promise<void> {
 
 async function callPm(): Promise<Task[]> {
   emit({ type: "pm.invoked", reason: "queue_empty" })
+  pmStatus = "running"
   try {
     const output = await runPm()
+    pmStatus = "idle"
     pmConsecutiveFailures = 0
     circuitBreaker.recordSuccess()
     const tasks = ingestPmTasks(output)
@@ -133,6 +180,7 @@ async function callPm(): Promise<Task[]> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
 
+    pmStatus = "idle"
     if (isRateLimitError(msg)) {
       rateLimitHits++
       circuitBreaker.recordFailure()
@@ -166,7 +214,13 @@ function taskToPmOutput(task: Task): PmOutput {
 }
 
 export async function executeTask(task: Task): Promise<void> {
+  workerStatus = "running"
+  currentTaskId = task.id
+  currentTaskTitle = task.title
+  currentTaskStartedAt = new Date().toISOString()
+
   // Gate 1: 方針チェック（Worker実行前に弾く）
+  setCurrentStage("gate1", task.id, task.title)
   const gate1 = await runGate1(task)
   if (gate1.verdict === "kill") {
     console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
@@ -175,6 +229,7 @@ export async function executeTask(task: Task): Promise<void> {
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
     broadcast("task:updated", { id: task.id, status: "failed" })
+    resetWorkerState()
     return
   }
   if (gate1.verdict === "recycle") {
@@ -182,6 +237,7 @@ export async function executeTask(task: Task): Promise<void> {
     appendLog(task.id, "gate1", `[recycle] ${gate1.reasons.join("; ")}`)
     revertToPending(task.id)
     broadcast("task:updated", { id: task.id, status: "pending" })
+    resetWorkerState()
     return
   }
   emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
@@ -206,6 +262,7 @@ export async function executeTask(task: Task): Promise<void> {
 
   try {
     // Tester: テスト先行生成
+    setCurrentStage("tester")
     const spec = taskToPmOutput(task)
     let testFiles: string[] = []
     const GATE2_MAX_RETRIES = 1
@@ -222,6 +279,7 @@ export async function executeTask(task: Task): Promise<void> {
       }
 
       // Gate 2: テストファイル品質検証
+      setCurrentStage("gate2")
       const gate2 = runGate2(spec, testFiles, worktreePath)
 
       if (gate2.verdict === "go") {
@@ -246,12 +304,14 @@ export async function executeTask(task: Task): Promise<void> {
       }
     }
 
+    setCurrentStage("worker")
     const startTime = Date.now()
     const result = await runWorker(task, worktreePath, testFiles)
     const executionMs = Date.now() - startTime
     const facts = collectFacts(task.id, task.title, worktreePath, result.exit_code)
 
     // Gate 3: Observable Facts判定（原理1: 判定はコード）
+    setCurrentStage("gate3")
     const gate3 = runGate3(task.id, facts)
 
     if (gate3.verdict === "kill") {
@@ -260,6 +320,8 @@ export async function executeTask(task: Task): Promise<void> {
       remember("lesson", `[gate3:kill] ${gate3.reasons.join("; ")}`, task.id)
       finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
+      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
       broadcast("task:updated", { id: task.id, status: "failed", result: facts })
     } else if (gate3.verdict === "recycle") {
@@ -267,6 +329,8 @@ export async function executeTask(task: Task): Promise<void> {
       remember("lesson", `[gate3:recycle] ${gate3.reasons.join("; ")}`, task.id)
       const retryCount = getRetryCount(task.id)
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
+      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
 
       if (retryCount < config.MAX_RETRIES) {
         console.log(`[scheduler] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
@@ -291,6 +355,7 @@ export async function executeTask(task: Task): Promise<void> {
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
       // PR作成 → 自動マージ
+      setCurrentStage("pr")
       let prUrl: string | null = null
       if (facts.commit_hash) {
         prUrl = createPullRequest(task.id, task.title, facts)
@@ -346,6 +411,7 @@ export async function executeTask(task: Task): Promise<void> {
       const cleanupMsg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
       console.warn(`[scheduler] worktree cleanup failed for ${task.id}: ${cleanupMsg}`)
     }
+    resetWorkerState()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
 
@@ -357,6 +423,12 @@ export async function executeTask(task: Task): Promise<void> {
       console.error(`[scheduler] worker error: ${msg}`)
       finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
       emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
+
+      // Record SPC metrics if cost is available on the error
+      const costUsd = (err as Record<string, unknown>)?.cost_usd
+      if (typeof costUsd === "number") {
+        recordTaskMetrics(task.id, costUsd, 0, 0)
+      }
     }
 
     // Cleanup worktree on failure too
@@ -365,27 +437,35 @@ export async function executeTask(task: Task): Promise<void> {
     } catch {
       // ignore cleanup errors on failure path
     }
+    resetWorkerState()
   }
 }
 
-const DAILY_REPORT_HOUR = Number(process.env.DAILY_REPORT_HOUR ?? "9")
 let dailyReportTimer: ReturnType<typeof setInterval> | null = null
+let shiftStartIso: string | null = null
+let wasWithinHours = false
 
 function startDailyReportTimer(): void {
-  // Check every 60s if it's time to send the daily report
-  let lastReportDate = ""
+  // Check every 60s: when transitioning OUT of active hours, send morning report
   dailyReportTimer = setInterval(() => {
-    const now = new Date()
-    // JST = UTC+9
-    const jstHour = (now.getUTCHours() + 9) % 24
-    const jstDate = now.toISOString().slice(0, 10)
+    const withinHours = isWithinActiveHours(config.ACTIVE_HOURS)
 
-    if (jstHour === DAILY_REPORT_HOUR && lastReportDate !== jstDate) {
-      lastReportDate = jstDate
-      runPrAgent().catch((err) => {
-        console.error(`[scheduler] daily PR report failed: ${err instanceof Error ? err.message : String(err)}`)
+    // Transition: active → inactive = shift ended
+    if (wasWithinHours && !withinHours && shiftStartIso) {
+      console.log("[scheduler] shift ended, sending morning report")
+      sendMorningReport(shiftStartIso).catch((err) => {
+        console.error(`[scheduler] morning report failed: ${err instanceof Error ? err.message : String(err)}`)
       })
+      shiftStartIso = null
     }
+
+    // Transition: inactive → active = shift started
+    if (!wasWithinHours && withinHours) {
+      shiftStartIso = new Date().toISOString()
+      console.log(`[scheduler] shift started at ${shiftStartIso}`)
+    }
+
+    wasWithinHours = withinHours
   }, 60_000)
 }
 
@@ -412,6 +492,13 @@ export async function startScheduler(): Promise<void> {
   alive = true
   pruneWorktrees()
   recoverOrphanTasks()
+
+  // Initialize shift tracking
+  wasWithinHours = isWithinActiveHours(config.ACTIVE_HOURS)
+  if (wasWithinHours) {
+    shiftStartIso = new Date().toISOString()
+    console.log(`[scheduler] starting within active hours, shift started at ${shiftStartIso}`)
+  }
   startDailyReportTimer()
 
   while (alive) {

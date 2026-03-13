@@ -10,6 +10,13 @@ export function insertAgentEvent(type: AgentEvent["type"], payload: AgentEvent):
   getDb().prepare(`INSERT INTO agent_events (id, type, payload, timestamp) VALUES (?, ?, ?, ?)`).run(id, type, JSON.stringify(payload), now)
 }
 
+export function getEventsByTaskId(taskId: string): AgentEvent[] {
+  const rows = getDb().prepare(
+    `SELECT * FROM agent_events WHERE json_extract(payload, '$.taskId') = ? ORDER BY timestamp ASC`,
+  ).all(taskId) as StoredAgentEvent[]
+  return rows.map(r => JSON.parse(r.payload) as AgentEvent)
+}
+
 export function getAgentEvents(opts: { type?: AgentEvent["type"]; limit?: number } = {}): AgentEvent[] {
   const limit = opts.limit ?? 100
   const db = getDb()

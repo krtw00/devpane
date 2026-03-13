@@ -155,8 +155,19 @@ export async function deleteMemory(id: string): Promise<void> {
 
 export type SchedulerStatus = {
   alive: boolean
+  paused: boolean
   rateLimitHits: number
   pmConsecutiveFailures: number
+  withinActiveHours: boolean
+  activeHours: { start: number; end: number } | null
+  pm: { status: 'idle' | 'running' }
+  worker: {
+    status: 'idle' | 'running'
+    taskId: string | null
+    taskTitle: string | null
+    stage: string | null
+    startedAt: string | null
+  }
 }
 
 export function fetchSchedulerStatus(): Promise<SchedulerStatus> {

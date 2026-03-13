@@ -3,7 +3,7 @@ import { join } from "node:path"
 import type { Task, Memory, PmOutput } from "@devpane/shared"
 import { PmOutputSchema } from "@devpane/shared/schemas"
 import { config } from "./config.js"
-import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask } from "./db.js"
+import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask, appendLog } from "./db.js"
 import { recall } from "./memory.js"
 import { spawnClaude, killAllClaude } from "./claude.js"
 
@@ -161,6 +161,12 @@ export async function runPm(): Promise<PmOutput> {
 
   const output = parsePmOutput(stdout)
   console.log(`[pm] generated ${output.tasks.length} tasks: ${output.reasoning}`)
+
+  // PM reasoning をログに保存（Shogun UI用）
+  appendLog("scheduler", "pm", `[reasoning] ${output.reasoning}`)
+  for (const t of output.tasks) {
+    appendLog("scheduler", "pm", `[task] ${t.title} (priority=${t.priority})`)
+  }
 
   return output
 }
