@@ -1,26 +1,27 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import {
-  useTasks, fetchSchedulerStatus, fetchPipelineStats,
-  createTask, pauseScheduler, resumeScheduler,
-  type Task, type PipelineStats, type SchedulerStatus,
+  fetchSchedulerStatus, fetchPipelineStats, fetchEvents,
+  pauseScheduler, resumeScheduler,
+  type PipelineStats, type SchedulerStatus, type AgentEvent,
 } from '../composables/useApi'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
-const { tasks, loading, refresh } = useTasks()
 const { connected } = useSocket()
 
 const scheduler = ref<SchedulerStatus | null>(null)
 const pipeline = ref<PipelineStats | null>(null)
 
-async function refreshAll() {
-  refresh()
+const recentEvents = ref<AgentEvent[]>([])
+
+async function refreshStatus() {
   try { scheduler.value = await fetchSchedulerStatus() } catch {}
   try { pipeline.value = await fetchPipelineStats() } catch {}
+  try { recentEvents.value = await fetchEvents(20) } catch {}
 }
 
 let timer: ReturnType<typeof setInterval>
-onMounted(() => { refreshAll(); timer = setInterval(refreshAll, 3000) })
+onMounted(() => { refreshStatus(); timer = setInterval(refreshStatus, 3000) })
 onUnmounted(() => clearInterval(timer))
 
 // --- Scheduler control ---
@@ -50,7 +51,6 @@ function pushLog(log: typeof pmLog, line: LogLine) {
   if (log.value.length > MAX_LOG_LINES) log.value.splice(0, log.value.length - MAX_LOG_LINES)
 }
 
-// Worker stream events
 onWsEvent('worker:text', (p) => {
   const { text } = p as { taskId: string; text: string }
   const last = workerLog.value[workerLog.value.length - 1]
@@ -79,7 +79,6 @@ onWsEvent('worker:tool_input', (p) => {
   nextTick(() => workerLogEl.value?.scrollTo(0, workerLogEl.value.scrollHeight))
 })
 
-// PM events
 onWsEvent('pm:reasoning', (p) => {
   const { reasoning } = p as { reasoning: string }
   pushLog(pmLog, { text: reasoning, type: 'text' })
@@ -92,7 +91,6 @@ onWsEvent('pm:task_generated', (p) => {
   nextTick(() => pmLogEl.value?.scrollTo(0, pmLogEl.value.scrollHeight))
 })
 
-// Stage updates
 onWsEvent('scheduler:stage', (p) => {
   const payload = p as { stage: string; taskId: string; taskTitle: string }
   if (scheduler.value) {
@@ -103,10 +101,38 @@ onWsEvent('scheduler:stage', (p) => {
   pushLog(workerLog, { text: `── ${payload.stage.toUpperCase()} ──`, type: 'stage' })
 })
 
-onWsEvent('task:created', () => refresh())
-onWsEvent('task:updated', () => refreshAll())
+onWsEvent('task:updated', () => refreshStatus())
+onWsEvent('event', () => refreshStatus())
 
-// Clear worker log when new task starts
+function eventIcon(type: string): string {
+  if (type.includes('completed')) return '✅'
+  if (type.includes('failed')) return '❌'
+  if (type.includes('passed')) return '🟢'
+  if (type.includes('rejected')) return '🔴'
+  if (type.includes('started')) return '⚡'
+  if (type.includes('created')) return '📝'
+  if (type.includes('pr.')) return '🔗'
+  if (type.includes('spc')) return '📊'
+  return '•'
+}
+
+function eventSummary(e: AgentEvent): string {
+  const id = e.taskId ? `[${String(e.taskId).slice(-6)}]` : ''
+  switch (e.type) {
+    case 'task.completed': return `${id} 完了 ($${Number(e.costUsd ?? 0).toFixed(2)})`
+    case 'task.failed': return `${id} 失敗: ${e.rootCause ?? 'unknown'}`
+    case 'gate.passed': return `${id} ${e.gate} 通過`
+    case 'gate.rejected': return `${id} ${e.gate} ${e.verdict}: ${String(e.reason ?? '').slice(0, 40)}`
+    case 'task.started': return `${id} 実行開始 → ${e.workerId}`
+    case 'task.created': return `${id} 作成 by ${e.by}`
+    case 'pr.created': return `${id} PR作成`
+    case 'pm.invoked': return 'PM呼び出し'
+    case 'pm.failed': return `PM失敗 (${e.consecutiveCount}回目)`
+    case 'spc.alert': return `SPC異常: ${e.metric}`
+    default: return e.type
+  }
+}
+
 watch(() => scheduler.value?.worker.taskId, (newId, oldId) => {
   if (newId && newId !== oldId) workerLog.value = []
 })
@@ -129,30 +155,6 @@ function elapsed(iso: string | null): string {
   return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h${min % 60}m`
 }
 
-// --- Task list ---
-const taskFilter = ref<'all' | 'pending' | 'running' | 'done' | 'failed'>('all')
-
-const counts = computed(() => {
-  const c = { pending: 0, running: 0, done: 0, failed: 0 }
-  for (const t of tasks.value) c[t.status]++
-  return c
-})
-
-const filteredTasks = computed(() => {
-  let list = [...tasks.value].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  if (taskFilter.value !== 'all') list = list.filter(t => t.status === taskFilter.value)
-  return list.slice(0, 30)
-})
-
-function statusIcon(s: Task['status']) { return { pending: '⏳', running: '⚡', done: '✅', failed: '❌' }[s] }
-function timeAgo(iso: string | null): string {
-  if (!iso) return ''
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (sec < 60) return `${sec}s`
-  const min = Math.floor(sec / 60)
-  return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h`
-}
-
 // --- Chat ---
 const chatInput = ref('')
 const sending = ref(false)
@@ -171,15 +173,6 @@ async function send() {
   sending.value = true; chatInput.value = ''
   try { await sendChat(msg) } finally { sending.value = false }
 }
-
-// --- Modal ---
-const showModal = ref(false)
-const taskForm = ref({ title: '', description: '', priority: 50 })
-const submitting = ref(false)
-async function submitTask() {
-  if (submitting.value) return; submitting.value = true
-  try { await createTask(taskForm.value); showModal.value = false; refresh() } finally { submitting.value = false }
-}
 </script>
 
 <template>
@@ -197,6 +190,7 @@ async function submitTask() {
           <span class="stat fail" v-if="pipeline.consecutive_failures > 0">連続失敗: {{ pipeline.consecutive_failures }}</span>
         </div>
         <div class="spacer" />
+        <router-link to="/tasks" class="nav-link">タスク管理</router-link>
         <div class="ctrl">
           <button class="ctrl-btn" :class="scheduler?.paused ? 'resume' : 'pause'" @click="togglePause" :disabled="toggling || !scheduler">
             {{ scheduler?.paused ? '▶ 再開' : '⏸ 一時停止' }}
@@ -227,9 +221,8 @@ async function submitTask() {
       </div>
     </div>
 
-    <!-- Main content: Agent Panes -->
+    <!-- Agent Panes -->
     <div class="panes">
-      <!-- PM Pane -->
       <div class="pane" :class="{ active: scheduler?.pm.status === 'running' }">
         <div class="pane-hdr">
           <span class="pane-name">PM</span>
@@ -242,7 +235,6 @@ async function submitTask() {
         </div>
       </div>
 
-      <!-- Worker Pane -->
       <div class="pane" :class="{ active: scheduler?.worker.status === 'running' }">
         <div class="pane-hdr">
           <span class="pane-name">Worker</span>
@@ -259,64 +251,33 @@ async function submitTask() {
       </div>
     </div>
 
-    <!-- Bottom: Tasks + Chat -->
+    <!-- Bottom: Events + Chat -->
     <div class="bottom">
-      <!-- Task List -->
-      <div class="tasks-panel">
-        <div class="tasks-hdr">
-          <span class="tasks-title">タスク</span>
-          <div class="filter-tabs">
-            <button :class="{ active: taskFilter === 'all' }" @click="taskFilter = 'all'">全て {{ tasks.length }}</button>
-            <button :class="{ active: taskFilter === 'done' }" @click="taskFilter = 'done'">✓{{ counts.done }}</button>
-            <button :class="{ active: taskFilter === 'pending' }" @click="taskFilter = 'pending'">⏳{{ counts.pending }}</button>
-            <button :class="{ active: taskFilter === 'running' }" @click="taskFilter = 'running'">⚡{{ counts.running }}</button>
-            <button :class="{ active: taskFilter === 'failed', bad: counts.failed > 0 }" @click="taskFilter = 'failed'">✗{{ counts.failed }}</button>
+      <!-- Event Feed -->
+      <div class="feed-panel">
+        <div class="feed-hdr">イベントフィード</div>
+        <div class="feed-log">
+          <div v-for="(e, i) in recentEvents" :key="i" class="feed-item" :class="e.type.includes('failed') || e.type.includes('rejected') ? 'bad' : ''">
+            <span class="feed-icon">{{ eventIcon(e.type) }}</span>
+            <span class="feed-text">{{ eventSummary(e) }}</span>
           </div>
-          <button class="add-btn" @click="showModal = true; taskForm = { title: '', description: '', priority: 50 }" title="タスク追加">+</button>
+          <div v-if="recentEvents.length === 0" class="log-empty">イベントなし</div>
         </div>
-        <ul class="tlist">
-          <li v-for="task in filteredTasks" :key="task.id" :class="`s-${task.status}`">
-            <router-link :to="`/tasks/${task.id}`">
-              <span class="ti">{{ statusIcon(task.status) }}</span>
-              <span class="tt">{{ task.title }}</span>
-              <span class="tm">{{ timeAgo(task.finished_at || task.started_at || task.created_at) }}</span>
-            </router-link>
-          </li>
-        </ul>
-        <div v-if="!loading && tasks.length === 0" class="empty">タスクなし</div>
       </div>
 
-      <!-- Chat -->
-      <div class="chat-panel">
-        <div class="chat-hdr">チャット <span class="dot" :class="connected ? 'on' : ''"/></div>
-        <div ref="chatEl" class="chat-log">
-          <div v-for="(m, i) in chatLog" :key="i" class="chat-msg"><span class="cf">[{{ m.from }}]</span> {{ m.text }}</div>
-          <div v-if="chatLog.length === 0" class="log-empty">チームに指示を送る...</div>
-        </div>
-        <form class="chat-form" @submit.prevent="send">
-          <input v-model="chatInput" placeholder="メッセージ..." :disabled="sending" @keydown.ctrl.enter.prevent="send" />
-          <button type="submit" :disabled="sending || !chatInput.trim()">送信</button>
-        </form>
+    <!-- Chat -->
+    <div class="chat-panel">
+      <div class="chat-hdr">チャット <span class="dot" :class="connected ? 'on' : ''"/></div>
+      <div ref="chatEl" class="chat-log">
+        <div v-for="(m, i) in chatLog" :key="i" class="chat-msg"><span class="cf">[{{ m.from }}]</span> {{ m.text }}</div>
+        <div v-if="chatLog.length === 0" class="log-empty">チームに指示を送る...</div>
       </div>
+      <form class="chat-form" @submit.prevent="send">
+        <input v-model="chatInput" placeholder="メッセージ..." :disabled="sending" @keydown.ctrl.enter.prevent="send" />
+        <button type="submit" :disabled="sending || !chatInput.trim()">送信</button>
+      </form>
     </div>
-
-    <!-- Modal -->
-    <Teleport to="body">
-      <div v-if="showModal" class="modal-bg" @click.self="showModal = false">
-        <div class="modal">
-          <h3>タスク追加</h3>
-          <form @submit.prevent="submitTask">
-            <label>タイトル<input v-model="taskForm.title" required /></label>
-            <label>説明<textarea v-model="taskForm.description" required rows="3" /></label>
-            <label>優先度<input v-model.number="taskForm.priority" type="number" min="0" max="100" /></label>
-            <div class="mact">
-              <button type="button" @click="showModal = false">キャンセル</button>
-              <button type="submit" class="pri" :disabled="submitting">作成</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
+    </div>
   </div>
 </template>
 
@@ -346,6 +307,9 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
 .stat.fail { color: #f85149; }
 
 .spacer { flex: 1; }
+
+.nav-link { color: #58a6ff; text-decoration: none; font-size: 0.7rem; }
+.nav-link:hover { text-decoration: underline; }
 
 .ctrl { display: flex; align-items: center; gap: 0.5rem; }
 .ctrl-btn {
@@ -423,43 +387,26 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
 .t-stage { color: #d29922; text-align: center; font-size: 0.6rem; padding: 0.15rem 0; letter-spacing: 1px; }
 .log-empty { color: #30363d; text-align: center; padding: 2rem 0; font-size: 0.75rem; }
 
-/* Bottom: Tasks + Chat */
-.bottom { display: grid; grid-template-columns: 1.5fr 1fr; gap: 0.5rem; flex-shrink: 0; height: 220px; }
+/* Bottom: Events + Chat */
+.bottom { display: grid; grid-template-columns: 1.2fr 1fr; gap: 0.5rem; flex-shrink: 0; height: 180px; }
 
-.tasks-panel { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
-.tasks-hdr {
-  display: flex; align-items: center; gap: 0.4rem;
-  padding: 0.3rem 0.5rem; background: #161b22; border-bottom: 1px solid #21262d;
+/* Event Feed */
+.feed-panel {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.tasks-title { font-weight: 700; color: #f0f6fc; font-size: 0.7rem; }
+.feed-hdr { padding: 0.3rem 0.5rem; background: #161b22; border-bottom: 1px solid #21262d; font-weight: 700; color: #f0f6fc; font-size: 0.7rem; }
+.feed-log { flex: 1; overflow-y: auto; padding: 0.25rem 0.5rem; font-size: 0.65rem; }
+.feed-item { display: flex; align-items: flex-start; gap: 0.3rem; padding: 0.15rem 0; color: #8b949e; }
+.feed-item.bad { color: #f85149; }
+.feed-icon { flex-shrink: 0; font-size: 0.7rem; }
+.feed-text { word-break: break-word; }
 
-.filter-tabs { display: flex; gap: 1px; margin-left: 0.5rem; }
-.filter-tabs button {
-  font-family: inherit; font-size: 0.55rem; padding: 0.1rem 0.3rem;
-  background: #21262d; color: #484f58; border: none; cursor: pointer;
+/* Chat */
+.chat-panel {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.filter-tabs button:first-child { border-radius: 3px 0 0 3px; }
-.filter-tabs button:last-child { border-radius: 0 3px 3px 0; }
-.filter-tabs button.active { background: #30363d; color: #c9d1d9; }
-.filter-tabs button.bad { color: #f85149; }
-
-.add-btn {
-  margin-left: auto; background: #21262d; color: #8b949e; border: 1px solid #30363d;
-  border-radius: 3px; width: 20px; height: 20px; font-size: 0.75rem; cursor: pointer; line-height: 1;
-}
-.add-btn:hover { color: #58a6ff; border-color: #58a6ff; }
-
-.tlist { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
-.tlist li { border-bottom: 1px solid #161b22; }
-.tlist li a { display: flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.5rem; color: inherit; text-decoration: none; }
-.tlist li a:hover { background: #161b22; }
-.ti { font-size: 0.7rem; flex-shrink: 0; }
-.tt { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c9d1d9; font-size: 0.7rem; }
-.tm { color: #484f58; font-size: 0.55rem; flex-shrink: 0; }
-.s-running { border-left: 2px solid #d29922; }
-.s-failed { border-left: 2px solid #f85149; }
-
-.chat-panel { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
 .chat-hdr { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem; background: #161b22; border-bottom: 1px solid #21262d; font-weight: 700; color: #f0f6fc; font-size: 0.7rem; }
 .chat-log { flex: 1; overflow-y: auto; padding: 0.35rem 0.5rem; font-size: 0.7rem; line-height: 1.5; }
 .chat-msg { }
@@ -475,26 +422,4 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
   padding: 0.2rem 0.5rem; font-family: inherit; font-size: 0.7rem; cursor: pointer;
 }
 .chat-form button:disabled { opacity: 0.3; }
-
-.empty { text-align: center; color: #30363d; padding: 1.5rem 0; }
-
-/* Modal */
-.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal {
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  padding: 1.25rem; width: 400px; max-width: 90vw; color: #c9d1d9; font-family: inherit;
-}
-.modal h3 { margin: 0 0 0.75rem; color: #f0f6fc; font-size: 1rem; }
-.modal label { display: block; margin-bottom: 0.5rem; font-size: 0.7rem; color: #8b949e; }
-.modal input, .modal textarea {
-  display: block; width: 100%; margin-top: 0.15rem; background: #0d1117; border: 1px solid #21262d;
-  border-radius: 4px; padding: 0.35rem 0.5rem; color: #c9d1d9; font-family: inherit; font-size: 0.8rem;
-  outline: none; box-sizing: border-box;
-}
-.modal input:focus, .modal textarea:focus { border-color: #58a6ff; }
-.modal textarea { resize: vertical; min-height: 50px; }
-.mact { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.75rem; }
-.mact button { background: #21262d; color: #8b949e; border: 1px solid #30363d; border-radius: 4px; padding: 0.3rem 0.6rem; font-family: inherit; font-size: 0.8rem; cursor: pointer; }
-.mact button.pri { background: #238636; color: #f0f6fc; border: none; }
-.mact button.pri:disabled { opacity: 0.4; }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useTaskDetail } from '../composables/useApi'
+import { useTaskDetail, fetchEvents, type AgentEvent } from '../composables/useApi'
+import { ref } from 'vue'
 
 const props = defineProps<{ id: string }>()
 const { task, logs, refresh } = useTaskDetail(props.id)
@@ -9,10 +10,21 @@ let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 3000) // poll faster on detail
+  loadPrUrl()
+  timer = setInterval(refresh, 3000)
 })
 
 onUnmounted(() => clearInterval(timer))
+
+const prUrl = ref<string | null>(null)
+
+async function loadPrUrl() {
+  try {
+    const events = await fetchEvents(500, 'pr.created')
+    const match = events.find((e: AgentEvent) => e.taskId === props.id)
+    if (match && typeof match.url === 'string') prUrl.value = match.url
+  } catch {}
+}
 
 const facts = computed(() => {
   if (!task.value?.result) return null
@@ -26,23 +38,24 @@ const facts = computed(() => {
 
 <template>
   <div class="detail">
-    <router-link to="/" class="back">&larr; back</router-link>
+    <router-link to="/tasks" class="back">← タスク一覧に戻る</router-link>
 
     <template v-if="task">
       <h1>{{ task.title }}</h1>
       <div class="meta">
         <span :class="['badge', `badge-${task.status}`]">{{ task.status }}</span>
-        <span>by {{ task.created_by }}</span>
-        <span v-if="task.assigned_to">on {{ task.assigned_to }}</span>
+        <span>作成: {{ task.created_by }}</span>
+        <span v-if="task.assigned_to">担当: {{ task.assigned_to }}</span>
+        <a v-if="prUrl" :href="prUrl" target="_blank" class="pr-link">PR →</a>
       </div>
 
       <section class="description">
-        <h2>Description</h2>
+        <h2>説明</h2>
         <pre>{{ task.description }}</pre>
       </section>
 
       <section v-if="facts" class="facts">
-        <h2>Observable Facts</h2>
+        <h2>実行結果</h2>
         <div class="facts-grid">
           <div>exit: <strong>{{ facts.exit_code }}</strong></div>
           <div>files: <strong>{{ facts.files_changed?.length ?? 0 }}</strong></div>
@@ -56,7 +69,7 @@ const facts = computed(() => {
           <div v-if="facts.commit_hash">commit: {{ facts.commit_hash?.slice(0, 8) }}</div>
         </div>
         <details v-if="facts.files_changed?.length">
-          <summary>changed files ({{ facts.files_changed.length }})</summary>
+          <summary>変更ファイル ({{ facts.files_changed.length }})</summary>
           <ul>
             <li v-for="f in facts.files_changed" :key="f">{{ f }}</li>
           </ul>
@@ -64,7 +77,7 @@ const facts = computed(() => {
       </section>
 
       <section v-if="facts?.gate3" class="gate3">
-        <h2>Gate 3 Result</h2>
+        <h2>Gate 3 判定</h2>
         <div class="gate3-verdict" :class="`verdict-${facts.gate3.verdict}`">
           {{ facts.gate3.verdict.toUpperCase() }}
         </div>
@@ -79,19 +92,19 @@ const facts = computed(() => {
       </section>
 
       <section class="logs">
-        <h2>Logs ({{ logs.length }})</h2>
+        <h2>ログ ({{ logs.length }})</h2>
         <div class="log-stream">
           <div v-for="log in logs" :key="log.id" class="log-entry">
             <span class="log-time">{{ new Date(log.timestamp).toLocaleTimeString() }}</span>
             <span class="log-agent">[{{ log.agent }}]</span>
             <span class="log-msg">{{ log.message }}</span>
           </div>
-          <div v-if="logs.length === 0" class="empty">no logs yet</div>
+          <div v-if="logs.length === 0" class="empty">ログなし</div>
         </div>
       </section>
     </template>
 
-    <div v-else class="loading">loading...</div>
+    <div v-else class="loading">読み込み中...</div>
   </div>
 </template>
 
@@ -144,6 +157,12 @@ h2 {
 .badge-running { background: #d29922; color: #0d1117; }
 .badge-done { background: #238636; color: #f0f6fc; }
 .badge-failed { background: #f85149; color: #f0f6fc; }
+
+.pr-link {
+  color: #58a6ff; text-decoration: none; font-size: 0.75rem;
+  padding: 0.1rem 0.4rem; border: 1px solid #58a6ff40; border-radius: 3px;
+}
+.pr-link:hover { background: #58a6ff15; }
 
 .description pre {
   background: #161b22;
