@@ -214,6 +214,7 @@ function taskToPmOutput(task: Task): PmOutput {
 }
 
 export async function executeTask(task: Task): Promise<void> {
+  const taskStartTime = Date.now()
   workerStatus = "running"
   currentTaskId = task.id
   currentTaskTitle = task.title
@@ -227,6 +228,7 @@ export async function executeTask(task: Task): Promise<void> {
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: gate1.reasons.join("; ") })
     remember("lesson", `[gate1:kill] ${gate1.reasons.join("; ")}`, task.id)
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
+    recordTaskMetrics(task.id, 0, Date.now() - taskStartTime, 0)
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
     broadcast("task:updated", { id: task.id, status: "failed" })
     resetWorkerState()
@@ -336,6 +338,7 @@ export async function executeTask(task: Task): Promise<void> {
       const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
       recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
+      await runHooks("task.failed", { task, rootCause: gate3.failure?.root_cause ?? "unknown" })
       broadcast("task:updated", { id: task.id, status: "failed", result: facts })
     } else if (gate3.verdict === "recycle") {
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "recycle", reason: gate3.reasons.join("; ") })
@@ -355,6 +358,7 @@ export async function executeTask(task: Task): Promise<void> {
         console.log(`[scheduler] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: { ...gate3, verdict: "kill", reasons: [...gate3.reasons, `max retries (${config.MAX_RETRIES}) exceeded`] } }))
         emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
+        await runHooks("task.failed", { task, rootCause: gate3.failure?.root_cause ?? "unknown" })
         broadcast("task:updated", { id: task.id, status: "failed", result: facts })
       }
     } else {
@@ -440,6 +444,7 @@ export async function executeTask(task: Task): Promise<void> {
       console.error(`[scheduler] worker error: ${msg}`)
       finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
       emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
+      await runHooks("task.failed", { task, rootCause: "env_issue" })
       broadcast("task:updated", { id: task.id, status: "failed" })
 
       // Record SPC metrics if cost is available on the error
