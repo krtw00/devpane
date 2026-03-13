@@ -2,6 +2,7 @@ import type { WhyWhyAnalysis } from "@devpane/shared/schemas"
 import { WhyWhyAnalysisSchema } from "@devpane/shared/schemas"
 import { getFailedTasks } from "./db.js"
 import { spawnClaude } from "./claude.js"
+import { config } from "./config.js"
 
 const CLAUDE_TIMEOUT_MS = 120_000
 const MAX_INPUT_TASKS = 20
@@ -36,7 +37,7 @@ ${taskSummaries}
 Respond with ONLY the JSON object, no markdown fences or explanation.`
 
   try {
-    const output = await spawnClaude(["-p", prompt, "--output-format", "json"], ".", CLAUDE_TIMEOUT_MS)
+    const output = await spawnClaude(["-p", prompt, "--output-format", "json"], config.PROJECT_ROOT, CLAUDE_TIMEOUT_MS)
 
     const cleaned = stripMarkdownFences(output)
     const parsed = JSON.parse(cleaned)

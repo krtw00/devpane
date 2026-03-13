@@ -1,5 +1,24 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 import { parsePmOutput } from "../pm.js"
+import { initDb, closeDb, getDb, createTask, startTask } from "../db.js"
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
+
+// Mock external dependencies for runPm tests
+const mockSpawnClaude = vi.fn()
+vi.mock("../claude.js", () => ({
+  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
+  killAllClaude: vi.fn(),
+}))
+vi.mock("../ws.js", () => ({
+  broadcast: vi.fn(),
+}))
+vi.mock("../memory.js", () => ({
+  recall: vi.fn(() => []),
+}))
 
 describe("parsePmOutput - JSON parse error handling", () => {
   it("parses valid JSON correctly", () => {
@@ -36,5 +55,65 @@ describe("parsePmOutput - JSON parse error handling", () => {
       expect(msg).toContain("PM output contains invalid JSON")
       expect(msg.length).toBeLessThan(300)
     }
+  })
+})
+
+describe("buildPmPrompt - failed task with invalid JSON result", () => {
+  beforeEach(() => {
+    initDb(":memory:", migrationsDir)
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    closeDb()
+  })
+
+  function createFailedTaskWithResult(result: string | null) {
+    const task = createTask("broken task", "description of broken task", "pm")
+    startTask(task.id, "worker-0")
+    getDb()
+      .prepare(`UPDATE tasks SET status = 'failed', finished_at = ?, result = ? WHERE id = ?`)
+      .run(new Date().toISOString(), result, task.id)
+    return task
+  }
+
+  const VALID_PM_RESPONSE = JSON.stringify({
+    tasks: [{ title: "Next task", description: "do something useful", priority: 1 }],
+    reasoning: "test reasoning",
+  })
+
+  it("does not crash when failed task result is invalid JSON", async () => {
+    createFailedTaskWithResult("THIS IS NOT VALID JSON")
+    mockSpawnClaude.mockResolvedValue(VALID_PM_RESPONSE)
+
+    const { runPm } = await import("../pm.js")
+    const result = await runPm()
+
+    expect(result.tasks).toHaveLength(1)
+    expect(result.tasks[0].title).toBe("Next task")
+  })
+
+  it("does not crash when failed task result is partially valid JSON", async () => {
+    createFailedTaskWithResult("{invalid json with brace")
+    mockSpawnClaude.mockResolvedValue(VALID_PM_RESPONSE)
+
+    const { runPm } = await import("../pm.js")
+    const result = await runPm()
+
+    expect(result.tasks).toHaveLength(1)
+  })
+
+  it("includes failed task title in prompt even with invalid result", async () => {
+    createFailedTaskWithResult("NOT JSON")
+    mockSpawnClaude.mockResolvedValue(VALID_PM_RESPONSE)
+
+    const { runPm } = await import("../pm.js")
+    await runPm()
+
+    const [args] = mockSpawnClaude.mock.calls[0]
+    const promptIdx = args.indexOf("-p")
+    const prompt: string = args[promptIdx + 1]
+    expect(prompt).toContain("broken task")
+    expect(prompt).toContain("[failed]")
   })
 })

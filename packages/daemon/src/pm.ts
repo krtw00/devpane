@@ -87,7 +87,7 @@ function buildPmPrompt(context: PmContext): string {
     "",
     "## 失敗タスク（未解決）",
     context.failedTasks.length > 0
-      ? context.failedTasks.map(t => `- [failed] ${t.title}: exit ${JSON.parse(t.result ?? "{}").exit_code ?? "?"}`).join("\n")
+      ? context.failedTasks.map(t => `- [failed] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
       : "（なし）",
     "",
     "## 現在のキュー",
