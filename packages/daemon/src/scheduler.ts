@@ -1,6 +1,6 @@
 import type { ActiveHours, Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost } from "./db.js"
+import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, recoverOrphanedTasks } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, autoMergePr, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -482,11 +482,17 @@ function stopDailyReportTimer(): void {
 function recoverOrphanTasks(): void {
   const orphans = getTasksByStatus("running")
   if (orphans.length === 0) return
-  console.log(`[scheduler] recovering ${orphans.length} orphan running tasks → pending`)
-  for (const t of orphans) {
-    removeWorktree(t.id)
-    revertToPending(t.id)
-    appendLog(t.id, "system", "[recovery] reverted to pending on daemon restart")
+  const recovered = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
+  if (recovered > 0) {
+    console.log(`[scheduler] recovered ${recovered} orphan tasks (timeout: ${config.WORKER_TIMEOUT_MS}ms, maxRetries: ${config.MAX_RETRIES})`)
+    for (const t of orphans) {
+      try {
+        removeWorktree(t.id)
+      } catch {
+        // ignore cleanup errors during recovery
+      }
+      appendLog(t.id, "system", "[recovery] orphan task recovered on daemon restart")
+    }
   }
 }
 
