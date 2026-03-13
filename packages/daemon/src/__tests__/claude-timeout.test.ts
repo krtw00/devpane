@@ -87,4 +87,57 @@ describe("spawnClaude timeout flag", () => {
 
     await expect(promise).resolves.toBe("output data")
   })
+
+  it("sends SIGKILL after 5s if SIGTERM did not kill the process on timeout", async () => {
+    const { spawnClaude } = await import("../claude.js")
+
+    // Override kill to NOT auto-close (simulates SIGTERM being ignored)
+    fakeProc.kill = vi.fn(() => true)
+
+    const promise = spawnClaude(["--print", "hello"], "/tmp", 100)
+
+    // Advance past timeout to trigger SIGTERM
+    vi.advanceTimersByTime(150)
+
+    expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM")
+
+    // Process is still alive
+    ;(fakeProc as { killed: boolean }).killed = false
+
+    // Advance 5s for SIGKILL fallback
+    vi.advanceTimersByTime(5_000)
+
+    expect(fakeProc.kill).toHaveBeenCalledWith("SIGKILL")
+
+    // Simulate process finally closing
+    fakeProc._emit("close", null, "SIGKILL")
+
+    await expect(promise).rejects.toThrow(/timeout/i)
+  })
+
+  it("does not send SIGKILL if SIGTERM successfully killed the process on timeout", async () => {
+    const { spawnClaude } = await import("../claude.js")
+
+    // Override kill: on SIGTERM, mark killed and emit close after delay
+    fakeProc.kill = vi.fn((signal?: string) => {
+      if (signal === "SIGTERM") {
+        ;(fakeProc as { killed: boolean }).killed = true
+        setTimeout(() => fakeProc._emit("close", null, "SIGTERM"), 0)
+      }
+      return true
+    })
+
+    const promise = spawnClaude(["--print", "hello"], "/tmp", 100)
+
+    // Advance past timeout to trigger SIGTERM
+    vi.advanceTimersByTime(150)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM")
+
+    await expect(promise).rejects.toThrow(/timeout/i)
+
+    // SIGKILL should never have been called
+    expect(fakeProc.kill).not.toHaveBeenCalledWith("SIGKILL")
+  })
 })

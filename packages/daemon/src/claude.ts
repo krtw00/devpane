@@ -24,14 +24,21 @@ export function spawnClaude(args: string[], cwd: string, timeoutMs?: number): Pr
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
 
     let timedOut = false
+    let sigkillTimer: ReturnType<typeof setTimeout> | undefined
     const timeout = setTimeout(() => {
       timedOut = true
       proc.kill("SIGTERM")
+      sigkillTimer = setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill("SIGKILL")
+        }
+      }, 5_000)
     }, timeoutMs ?? config.PM_TIMEOUT_MS)
 
     proc.on("close", (code, signal) => {
       activeProcs.delete(proc)
       clearTimeout(timeout)
+      if (sigkillTimer) clearTimeout(sigkillTimer)
       proc.stdout.removeAllListeners("data")
       proc.stderr.removeAllListeners("data")
       let chunk
@@ -51,6 +58,7 @@ export function spawnClaude(args: string[], cwd: string, timeoutMs?: number): Pr
     proc.on("error", (err) => {
       activeProcs.delete(proc)
       clearTimeout(timeout)
+      if (sigkillTimer) clearTimeout(sigkillTimer)
       reject(err)
     })
 
