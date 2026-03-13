@@ -257,6 +257,7 @@ export async function executeTask(task: Task): Promise<void> {
     finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
     emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
     broadcast("task:updated", { id: task.id, status: "failed" })
+    resetWorkerState()
     return
   }
 
