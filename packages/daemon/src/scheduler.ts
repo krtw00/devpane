@@ -130,6 +130,8 @@ export function getSchedulerState() {
 /** @internal テスト用 */
 export function resetPmConsecutiveFailures(): void {
   pmConsecutiveFailures = 0
+  alive = true
+  paused = false
 }
 
 /** @internal テスト用 */
@@ -197,9 +199,9 @@ async function callPm(): Promise<Task[]> {
     if (pmConsecutiveFailures % 3 === 0) {
       const backoffSec = calculatePmBackoff(pmConsecutiveFailures)
       console.error(`[scheduler] PM failed ${pmConsecutiveFailures}x, cooling down ${backoffSec}s`)
-      await sleep(backoffSec * 1000)
+      for (let i = 0; i < backoffSec && alive && !paused; i++) await sleep(1000)
     } else {
-      await sleep(config.PM_RETRY_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.PM_RETRY_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
     }
     return []
   }
