@@ -46,7 +46,8 @@ export function collectFacts(
       exit_code: 0,
     }
   } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string }
+    const err = e as { status?: number; killed?: boolean; signal?: string; stdout?: string; stderr?: string }
+    const timedOut = err.killed === true || err.signal === "SIGTERM"
     if (err.status !== undefined) {
       const output = (err.stdout ?? "") + (err.stderr ?? "")
       const passMatch = output.match(/(\d+)\s+pass/i)
@@ -55,9 +56,10 @@ export function collectFacts(
         passed: passMatch ? Number(passMatch[1]) : 0,
         failed: failMatch ? Number(failMatch[1]) : 0,
         exit_code: err.status ?? 1,
+        ...(timedOut && { timed_out: true }),
       }
     } else {
-      testResult = { passed: 0, failed: 1, exit_code: 1 }
+      testResult = { passed: 0, failed: 1, exit_code: 1, ...(timedOut && { timed_out: true }) }
     }
   }
 

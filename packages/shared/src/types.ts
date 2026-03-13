@@ -33,6 +33,7 @@ export type ObservableFacts = {
     passed: number
     failed: number
     exit_code: number
+    timed_out?: boolean
   }
   lint_result?: {
     errors: number
