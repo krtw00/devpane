@@ -1,6 +1,7 @@
 import { ulid } from "ulid"
 import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
 import { getDb } from "./core.js"
+import { insertAgentEvent } from "./events.js"
 
 export function createTask(
   title: string,
@@ -103,8 +104,9 @@ export function recoverOrphanedTasks(timeoutMs: number, maxRetries: number): str
       ).run(task.id)
     } else {
       db.prepare(
-        `UPDATE tasks SET status = 'failed', finished_at = ? WHERE id = ?`,
-      ).run(new Date().toISOString(), task.id)
+        `UPDATE tasks SET status = 'failed', finished_at = ?, result = ? WHERE id = ?`,
+      ).run(new Date().toISOString(), "Recovered as failed: daemon restart or timeout exceeded", task.id)
+      insertAgentEvent("task.failed", { type: "task.failed", taskId: task.id, rootCause: "timeout" })
     }
   }
 
