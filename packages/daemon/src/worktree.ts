@@ -119,6 +119,20 @@ export function autoMergePr(taskId: string): boolean {
   }
 }
 
+function hasOpenPr(branch: string): boolean {
+  try {
+    const result = execFileSync("gh", ["pr", "list", "--head", branch, "--state", "open", "--json", "number"], {
+      cwd: config.PROJECT_ROOT,
+      encoding: "utf-8",
+      timeout: 15000,
+    }).trim()
+    const prs = JSON.parse(result)
+    return Array.isArray(prs) && prs.length > 0
+  } catch {
+    return false
+  }
+}
+
 export function pruneWorktrees(): void {
   // git worktree prune で壊れた参照を掃除
   git("worktree", "prune")
@@ -141,6 +155,10 @@ export function pruneWorktrees(): void {
   try {
     const branches = git("branch", "--list", "devpane/*").split("\n").map(b => b.trim()).filter(Boolean)
     for (const branch of branches) {
+      if (hasOpenPr(branch)) {
+        console.log(`[worktree] skipping branch with open PR: ${branch}`)
+        continue
+      }
       try {
         git("branch", "-D", branch)
         console.log(`[worktree] pruned stale branch: ${branch}`)
