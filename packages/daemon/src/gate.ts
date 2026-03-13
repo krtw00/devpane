@@ -1,6 +1,5 @@
 import type { ObservableFacts } from "@devpane/shared"
 import type { Gate3Verdict, StructuredFailure, RootCauseType } from "@devpane/shared/schemas"
-import { emit } from "./events.js"
 import { appendLog } from "./db.js"
 import { config } from "./config.js"
 
@@ -55,12 +54,9 @@ export function runGate3(taskId: string, facts: ObservableFacts): Gate3Result {
     reasons.push("no files changed")
   }
 
-  // Emit event
   if (verdict === "go") {
-    emit({ type: "gate.passed", taskId, gate: "gate3" })
     appendLog(taskId, "gate3", `[pass] ${reasons.length === 0 ? "all checks passed" : reasons.join(", ")}`)
   } else {
-    emit({ type: "gate.rejected", taskId, gate: "gate3", verdict, reason: reasons.join("; ") })
     appendLog(taskId, "gate3", `[${verdict}] ${reasons.join("; ")}`)
   }
 
