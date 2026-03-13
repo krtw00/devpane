@@ -16,6 +16,7 @@ export function collectFacts(
   const { filesChanged, additions, deletions } = getWorktreeDiff(taskId)
 
   // Build first (required for monorepo — dist/ doesn't exist in worktree)
+  let buildFailed = false
   try {
     execFileSync("pnpm", ["build"], {
       cwd: worktreePath,
@@ -23,6 +24,7 @@ export function collectFacts(
       timeout: 120000,
     })
   } catch (e) {
+    buildFailed = true
     const buildErr = e as { stderr?: string; message?: string }
     const detail = buildErr.stderr || buildErr.message || "unknown build error"
     appendLog(taskId, "build", `[error] pnpm build failed: ${detail}`)
@@ -88,7 +90,7 @@ export function collectFacts(
   }
 
   return {
-    exit_code: exitCode,
+    exit_code: buildFailed ? Math.max(exitCode, 1) : exitCode,
     files_changed: filesChanged,
     diff_stats: { additions, deletions },
     test_result: testResult,

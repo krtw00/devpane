@@ -233,6 +233,37 @@ describe("gate.rejected → agent_events DB記録", () => {
     expect(first.verdict).toBe("kill")
   })
 
+  it("Gate1 recycle → agent_eventsにgate.rejectedレコードが挿入される", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockRunGate1.mockResolvedValue({ verdict: "recycle", reasons: ["needs clarification"] })
+    const task = makeTask()
+
+    await executeTask(task)
+
+    const events = getAgentEvents({ type: "gate.rejected" })
+    const rejected = events.find(
+      (e) => e.type === "gate.rejected" && "gate" in e && e.gate === "gate1",
+    ) as Extract<AgentEvent, { type: "gate.rejected" }> | undefined
+    expect(rejected).toBeTruthy()
+    expect(rejected!.taskId).toBe(task.id)
+    expect(rejected!.verdict).toBe("recycle")
+    expect(rejected!.reason).toContain("needs clarification")
+  })
+
+  it("Gate1 recycle → gate.rejectedが1回だけ記録される（二重発火しない）", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockRunGate1.mockResolvedValue({ verdict: "recycle", reasons: ["ambiguous scope"] })
+    const task = makeTask()
+
+    await executeTask(task)
+
+    const events = getAgentEvents({ type: "gate.rejected" })
+    const gate1Rejected = events.filter(
+      (e) => e.type === "gate.rejected" && "gate" in e && e.gate === "gate1",
+    )
+    expect(gate1Rejected).toHaveLength(1)
+  })
+
   it("Gate1 go → agent_eventsにgate.rejectedが記録されない", async () => {
     const { executeTask } = await import("../scheduler.js")
     const task = makeTask()
