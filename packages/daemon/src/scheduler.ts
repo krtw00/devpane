@@ -281,6 +281,7 @@ export async function executeTask(task: Task): Promise<void> {
         console.error(`[scheduler] tester timed out for task ${task.id}, skipping worker`)
         appendLog(task.id, "tester", `[timeout] tester timed out, skipping worker`)
         finishTask(task.id, "failed", JSON.stringify({ error: "tester_timeout" }))
+        recordTaskMetrics(task.id, 0, Date.now() - taskStartTime, 0)
         emit({ type: "task.failed", taskId: task.id, rootCause: "timeout" })
         broadcast("task:updated", { id: task.id, status: "failed" })
         removeWorktree(task.id)
