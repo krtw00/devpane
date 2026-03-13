@@ -214,8 +214,16 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
       }
     })
 
-    proc.stderr.on("data", () => {
+    const STDERR_MAX = 10_240
+    let stderr = ""
+    proc.stderr.on("data", (chunk: Buffer) => {
       lastActivity = Date.now()
+      if (stderr.length < STDERR_MAX) {
+        stderr += chunk.toString()
+        if (stderr.length > STDERR_MAX) {
+          stderr = stderr.slice(0, STDERR_MAX)
+        }
+      }
     })
 
     let timedOut = false
@@ -244,6 +252,9 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
       clearInterval(idleCheck)
       if (sigkillCheck) clearInterval(sigkillCheck)
       rl.close()
+      if (stderr) {
+        appendLog(taskId ?? "tester", "tester", `[stderr] ${stderr}`)
+      }
       if (timedOut) {
         emit({ type: "task.failed", taskId: taskId ?? "tester", rootCause: "timeout" })
       }
