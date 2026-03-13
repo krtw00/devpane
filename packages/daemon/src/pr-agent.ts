@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { config } from "./config.js"
-import { sendDiscordMessage } from "./discord.js"
+import { getNotifier } from "./notifier-factory.js"
 
 export type PrInfo = {
   number: number
@@ -144,7 +144,7 @@ export async function runPrAgent(): Promise<{ reports: PrReport[]; message: stri
   const reports = prs.map(assessRisk)
   const message = formatReport(reports)
 
-  await sendDiscordMessage(message)
+  await getNotifier().sendMessage(message)
   console.log(`[pr-agent] report sent (${reports.length} PRs)`)
 
   return { reports, message }

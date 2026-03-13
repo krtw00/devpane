@@ -1,8 +1,8 @@
 import type { AgentEvent } from "@devpane/shared/schemas"
 import { type Notifier, formatEventPlain } from "./notifier.js"
 
-/** Discord Incoming Webhook notifier */
-export class DiscordNotifier implements Notifier {
+/** Slack Incoming Webhook notifier */
+export class SlackNotifier implements Notifier {
   constructor(private webhookUrl: string) {}
 
   async sendMessage(text: string): Promise<void> {
@@ -10,10 +10,10 @@ export class DiscordNotifier implements Notifier {
       await fetch(this.webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ text }),
       })
     } catch (err) {
-      console.warn(`[discord] webhook failed: ${err instanceof Error ? err.message : String(err)}`)
+      console.warn(`[slack] webhook failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

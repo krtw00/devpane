@@ -2,7 +2,7 @@ import type { AgentEvent } from "@devpane/shared/schemas"
 import { AgentEventSchema } from "@devpane/shared/schemas"
 import { insertAgentEvent, getAgentEvents, getDb } from "./db.js"
 import { broadcast } from "./ws.js"
-import { notify } from "./discord.js"
+import { getNotifier } from "./notifier-factory.js"
 
 let querySinceStmt: ReturnType<ReturnType<typeof getDb>["prepare"]> | null = null
 let querySinceDb: ReturnType<typeof getDb> | null = null
@@ -19,7 +19,7 @@ function getQuerySinceStmt() {
 export function emit(event: AgentEvent): void {
   insertAgentEvent(event.type, event)
   broadcast("event", event)
-  notify(event).catch(() => {})
+  getNotifier().notify(event).catch(() => {})
 }
 
 export function safeEmit(raw: unknown): boolean {

@@ -12,8 +12,8 @@ import { runGate2 } from "./gate2.js"
 import { runGate3 } from "./gate.js"
 import { runTester } from "./tester.js"
 import { circuitBreaker } from "./circuit-breaker.js"
-import { runPrAgent } from "./pr-agent.js"
 import { runHooks, type TaskCompletedData } from "./scheduler-hooks.js"
+import { sendMorningReport } from "./morning-report.js"
 import { remember } from "./memory.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
@@ -368,24 +368,31 @@ export async function executeTask(task: Task): Promise<void> {
   }
 }
 
-const DAILY_REPORT_HOUR = Number(process.env.DAILY_REPORT_HOUR ?? "9")
 let dailyReportTimer: ReturnType<typeof setInterval> | null = null
+let shiftStartIso: string | null = null
+let wasWithinHours = false
 
 function startDailyReportTimer(): void {
-  // Check every 60s if it's time to send the daily report
-  let lastReportDate = ""
+  // Check every 60s: when transitioning OUT of active hours, send morning report
   dailyReportTimer = setInterval(() => {
-    const now = new Date()
-    // JST = UTC+9
-    const jstHour = (now.getUTCHours() + 9) % 24
-    const jstDate = now.toISOString().slice(0, 10)
+    const withinHours = isWithinActiveHours(config.ACTIVE_HOURS)
 
-    if (jstHour === DAILY_REPORT_HOUR && lastReportDate !== jstDate) {
-      lastReportDate = jstDate
-      runPrAgent().catch((err) => {
-        console.error(`[scheduler] daily PR report failed: ${err instanceof Error ? err.message : String(err)}`)
+    // Transition: active → inactive = shift ended
+    if (wasWithinHours && !withinHours && shiftStartIso) {
+      console.log("[scheduler] shift ended, sending morning report")
+      sendMorningReport(shiftStartIso).catch((err) => {
+        console.error(`[scheduler] morning report failed: ${err instanceof Error ? err.message : String(err)}`)
       })
+      shiftStartIso = null
     }
+
+    // Transition: inactive → active = shift started
+    if (!wasWithinHours && withinHours) {
+      shiftStartIso = new Date().toISOString()
+      console.log(`[scheduler] shift started at ${shiftStartIso}`)
+    }
+
+    wasWithinHours = withinHours
   }, 60_000)
 }
 
@@ -412,6 +419,13 @@ export async function startScheduler(): Promise<void> {
   alive = true
   pruneWorktrees()
   recoverOrphanTasks()
+
+  // Initialize shift tracking
+  wasWithinHours = isWithinActiveHours(config.ACTIVE_HOURS)
+  if (wasWithinHours) {
+    shiftStartIso = new Date().toISOString()
+    console.log(`[scheduler] starting within active hours, shift started at ${shiftStartIso}`)
+  }
   startDailyReportTimer()
 
   while (alive) {
