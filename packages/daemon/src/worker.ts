@@ -169,7 +169,9 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
     })
 
     proc.on("error", (err) => {
+      activeProcs.delete(proc)
       clearInterval(idleCheck)
+      if (sigkillCheck) clearInterval(sigkillCheck)
       rl.close()
       appendLog(task.id, "worker", `[error] ${err.message}`)
       reject(err)
