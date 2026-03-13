@@ -192,7 +192,8 @@ export function isDuplicate(newTitle: string, existingTitles: string[]): boolean
 export function ingestPmTasks(output: PmOutput): Task[] {
   const doneTitles = getAllDoneTitles()
   const pendingTitles = getTasksByStatus("pending").map(t => t.title)
-  const existingTitles = [...doneTitles, ...pendingTitles]
+  const failedTitles = getTasksByStatus("failed").map(t => t.title)
+  const existingTitles = [...doneTitles, ...pendingTitles, ...failedTitles]
 
   const created: Task[] = []
   for (const t of output.tasks) {
