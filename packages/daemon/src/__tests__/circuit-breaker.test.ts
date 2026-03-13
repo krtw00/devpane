@@ -131,4 +131,57 @@ describe("CircuitBreaker", () => {
     // only 2 failures after reset, should still be closed
     expect(cb.getState()).toBe("closed")
   })
+
+  it("does not emit worker.rate_limited on transition to half-open", () => {
+    cb.recordFailure()
+    cb.recordFailure()
+    cb.recordFailure() // closed → open
+    vi.mocked(emit).mockClear()
+
+    // open → half-open (backoff elapsed)
+    now = 300 * 1000
+    cb.getState() // triggers maybeTransition → half-open
+    expect(cb.getState()).toBe("half-open")
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it("does not emit worker.rate_limited on transition to closed", () => {
+    cb.recordFailure()
+    cb.recordFailure()
+    cb.recordFailure() // closed → open
+    now = 300 * 1000
+    cb.canProceed() // open → half-open
+    vi.mocked(emit).mockClear()
+
+    cb.recordSuccess() // half-open → closed
+    expect(cb.getState()).toBe("closed")
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it("emits worker.rate_limited only on transitions to open", () => {
+    // closed → open (emit #1)
+    cb.recordFailure()
+    cb.recordFailure()
+    cb.recordFailure()
+
+    // open → half-open (no emit)
+    now = 300 * 1000
+    cb.canProceed()
+
+    // half-open → open (emit #2)
+    cb.recordFailure()
+
+    // open → half-open (no emit)
+    now += 600 * 1000
+    cb.canProceed()
+
+    // half-open → closed (no emit)
+    cb.recordSuccess()
+
+    // Only 2 emit calls — both for transitions to open
+    expect(emit).toHaveBeenCalledTimes(2)
+    for (const call of vi.mocked(emit).mock.calls) {
+      expect(call[0]).toMatchObject({ type: "worker.rate_limited" })
+    }
+  })
 })

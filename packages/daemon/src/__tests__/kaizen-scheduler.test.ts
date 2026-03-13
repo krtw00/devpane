@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AgentEvent } from "@devpane/shared/schemas"
-import { initDb, closeDb, getDb, createTask, startTask } from "../db.js"
+import { initDb, closeDb, getDb, createTask, startTask, insertAgentEvent } from "../db.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
@@ -11,7 +11,11 @@ const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 const emittedEvents: AgentEvent[] = []
 
 vi.mock("../events.js", () => ({
-  emit: vi.fn((event: AgentEvent) => { emittedEvents.push(event) }),
+  emit: vi.fn((event: AgentEvent) => {
+    emittedEvents.push(event)
+    // Replicate real emit() behavior: persist to agent_events table
+    insertAgentEvent(event.type, event)
+  }),
   safeEmit: vi.fn(() => true),
 }))
 

@@ -78,7 +78,9 @@ export class CircuitBreaker {
     if (to === "open") {
       this.openedAt = this.clock()
     }
-    emit({ type: "worker.rate_limited", backoffSec: this.currentBackoff })
+    if (to === "open") {
+      emit({ type: "worker.rate_limited", backoffSec: this.currentBackoff })
+    }
     console.log(`[circuit-breaker] ${from} → ${to} (backoff: ${this.currentBackoff}s)`)
   }
 }

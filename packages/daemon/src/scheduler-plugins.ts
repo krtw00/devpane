@@ -3,7 +3,7 @@ import { recordTaskMetrics, checkAllMetrics } from "./spc.js"
 import { emit, safeEmit } from "./events.js"
 import { remember, forget, findSimilar, cleanupOldLessons } from "./memory.js"
 import { getWorktreeNewAndDeleted } from "./worktree.js"
-import { getActiveImprovements, getFailedTasks, getDb, insertAgentEvent } from "./db.js"
+import { getActiveImprovements, getFailedTasks, getDb } from "./db.js"
 import { measureAllActive } from "./effect-measure.js"
 import { analyze } from "./kaizen.js"
 import { ulid } from "ulid"
@@ -94,7 +94,6 @@ export async function checkKaizenAnalysis(): Promise<void> {
 
     const event = { type: "improvement.applied" as const, improvementId: id, target: imp.target }
     emit(event)
-    insertAgentEvent("improvement.applied", event)
   }
 }
 
