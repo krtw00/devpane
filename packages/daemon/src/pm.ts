@@ -128,7 +128,12 @@ export function parsePmOutput(stdout: string): PmOutput {
   const match = text.match(/\{[\s\S]*\}/)
   if (!match) throw new Error(`PM output does not contain valid JSON: ${text.slice(0, 200)}`)
 
-  const parsed = JSON.parse(match[0])
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(match[0])
+  } catch {
+    throw new Error(`PM output contains invalid JSON: ${match[0].slice(0, 200)}`)
+  }
 
   // Contract: Zodスキーマでバリデーション（原理3）
   const result = PmOutputSchema.safeParse(parsed)
