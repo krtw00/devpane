@@ -13,6 +13,7 @@ import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 import { killAllWorkers } from "./worker.js"
 import { killAllPm } from "./pm.js"
+import { killAllTesters } from "./tester.js"
 
 const app = new Hono()
 
@@ -45,6 +46,7 @@ async function shutdown() {
   await stopScheduler()
   killAllWorkers()
   killAllPm()
+  killAllTesters()
   process.exit(0)
 }
 
