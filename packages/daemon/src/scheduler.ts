@@ -15,6 +15,7 @@ import { circuitBreaker } from "./circuit-breaker.js"
 import { runHooks, type TaskCompletedData } from "./scheduler-hooks.js"
 import { sendMorningReport } from "./morning-report.js"
 import { remember } from "./memory.js"
+import { recordTaskMetrics } from "./spc.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
 
@@ -319,6 +320,8 @@ export async function executeTask(task: Task): Promise<void> {
       remember("lesson", `[gate3:kill] ${gate3.reasons.join("; ")}`, task.id)
       finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
+      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
       broadcast("task:updated", { id: task.id, status: "failed", result: facts })
     } else if (gate3.verdict === "recycle") {
@@ -326,6 +329,8 @@ export async function executeTask(task: Task): Promise<void> {
       remember("lesson", `[gate3:recycle] ${gate3.reasons.join("; ")}`, task.id)
       const retryCount = getRetryCount(task.id)
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
+      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
 
       if (retryCount < config.MAX_RETRIES) {
         console.log(`[scheduler] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
@@ -418,6 +423,12 @@ export async function executeTask(task: Task): Promise<void> {
       console.error(`[scheduler] worker error: ${msg}`)
       finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
       emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
+
+      // Record SPC metrics if cost is available on the error
+      const costUsd = (err as Record<string, unknown>)?.cost_usd
+      if (typeof costUsd === "number") {
+        recordTaskMetrics(task.id, costUsd, 0, 0)
+      }
     }
 
     // Cleanup worktree on failure too
