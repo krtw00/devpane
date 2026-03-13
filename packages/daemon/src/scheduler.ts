@@ -576,7 +576,7 @@ export async function startScheduler(): Promise<void> {
     if (!isWithinActiveHours(config.ACTIVE_HOURS)) {
       emit({ type: "scheduler.outside_hours" })
       console.log(`[scheduler] outside active hours, idling ${config.IDLE_INTERVAL_SEC}s`)
-      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
 
@@ -584,7 +584,7 @@ export async function startScheduler(): Promise<void> {
     const openPrs = countOpenPrs()
     if (openPrs >= config.MAX_OPEN_PRS) {
       console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${config.MAX_OPEN_PRS}), waiting...`)
-      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
     // PRがなくなった = マージされた → mainを最新化してコンフリクト防止
@@ -600,7 +600,7 @@ export async function startScheduler(): Promise<void> {
 
       if (created.length === 0) {
         console.log(`[scheduler] PM returned no tasks, idling ${config.IDLE_INTERVAL_SEC}s`)
-        await sleep(config.IDLE_INTERVAL_SEC * 1000)
+        for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
         continue
       }
 
