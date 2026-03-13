@@ -118,4 +118,5 @@ export type Config = {
   EFFECT_MEASURE_THRESHOLD: number
   KAIZEN_THRESHOLD: number
   MEMORY_CLEANUP_THRESHOLD: number
+  PRUNE_INTERVAL_HOURS: number
 }

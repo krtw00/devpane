@@ -73,6 +73,7 @@ let paused = false
 let rateLimitHits = 0
 let pmConsecutiveFailures = 0
 let currentTaskPromise: Promise<void> | null = null
+let lastPruneAt = 0
 
 // --- Agent state tracking for Shogun UI ---
 export type AgentStatus = "idle" | "running"
@@ -530,7 +531,12 @@ export function recoverOrphanTasks(): void {
 export async function startScheduler(): Promise<void> {
   console.log("[scheduler] starting autonomous loop")
   alive = true
-  pruneWorktrees()
+  try {
+    pruneWorktrees()
+  } catch (err) {
+    console.error(`[scheduler] initial prune failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  lastPruneAt = Date.now()
   recoverOrphanTasks()
 
   // Initialize shift tracking
@@ -554,6 +560,16 @@ export async function startScheduler(): Promise<void> {
       console.log(`[scheduler] circuit open, skipping cycle (backoff: ${backoff}s)`)
       for (let i = 0; i < backoff && alive && !paused; i++) await sleep(1000)
       continue
+    }
+
+    // Periodic prune: 一定時間経過でworktree/branch掃除
+    if (Date.now() - lastPruneAt >= config.PRUNE_INTERVAL_HOURS * 60 * 60 * 1000) {
+      try {
+        pruneWorktrees()
+      } catch (err) {
+        console.error(`[scheduler] periodic prune failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      lastPruneAt = Date.now()
     }
 
     // Active Hours: 稼働時間外ならタスク実行をスキップ
