@@ -73,13 +73,57 @@ let rateLimitHits = 0
 let pmConsecutiveFailures = 0
 let currentTaskPromise: Promise<void> | null = null
 
+// --- Agent state tracking for Shogun UI ---
+export type AgentStatus = "idle" | "running"
+export type PipelineStageLabel = "pm" | "gate1" | "tester" | "gate2" | "worker" | "gate3" | "pr" | null
+
+let pmStatus: AgentStatus = "idle"
+let workerStatus: AgentStatus = "idle"
+let currentTaskId: string | null = null
+let currentTaskTitle: string | null = null
+let currentStage: PipelineStageLabel = null
+let currentTaskStartedAt: string | null = null
+
+function resetWorkerState(): void {
+  workerStatus = "idle"
+  currentTaskId = null
+  currentTaskTitle = null
+  currentStage = null
+  currentTaskStartedAt = null
+}
+
+export function setCurrentStage(stage: PipelineStageLabel, taskId?: string, taskTitle?: string): void {
+  currentStage = stage
+  if (taskId !== undefined) currentTaskId = taskId
+  if (taskTitle !== undefined) currentTaskTitle = taskTitle
+  if (stage) {
+    broadcast("scheduler:stage", { stage, taskId: currentTaskId, taskTitle: currentTaskTitle })
+  }
+}
+
 // Re-export from scheduler-plugins for backward compatibility
 export { EFFECT_MEASURE_THRESHOLD, checkEffectMeasurement, resetEffectMeasureCounter, setEffectMeasureCounter, getEffectMeasureCounter } from "./scheduler-plugins.js"
 export { KAIZEN_THRESHOLD, checkKaizenAnalysis, resetKaizenCounter, setKaizenCounter, getKaizenCounter } from "./scheduler-plugins.js"
 import { getEffectMeasureCounter } from "./scheduler-plugins.js"
 
 export function getSchedulerState() {
-  return { alive, rateLimitHits, pmConsecutiveFailures, taskCompletionsSinceLastMeasure: getEffectMeasureCounter() }
+  return {
+    alive,
+    paused,
+    rateLimitHits,
+    pmConsecutiveFailures,
+    taskCompletionsSinceLastMeasure: getEffectMeasureCounter(),
+    withinActiveHours: isWithinActiveHours(config.ACTIVE_HOURS),
+    activeHours: config.ACTIVE_HOURS,
+    pm: { status: pmStatus },
+    worker: {
+      status: workerStatus,
+      taskId: currentTaskId,
+      taskTitle: currentTaskTitle,
+      stage: currentStage,
+      startedAt: currentTaskStartedAt,
+    },
+  }
 }
 
 /** @internal テスト用 */
@@ -121,8 +165,10 @@ export async function stopScheduler(): Promise<void> {
 
 async function callPm(): Promise<Task[]> {
   emit({ type: "pm.invoked", reason: "queue_empty" })
+  pmStatus = "running"
   try {
     const output = await runPm()
+    pmStatus = "idle"
     pmConsecutiveFailures = 0
     circuitBreaker.recordSuccess()
     const tasks = ingestPmTasks(output)
@@ -133,6 +179,7 @@ async function callPm(): Promise<Task[]> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
 
+    pmStatus = "idle"
     if (isRateLimitError(msg)) {
       rateLimitHits++
       circuitBreaker.recordFailure()
@@ -166,7 +213,13 @@ function taskToPmOutput(task: Task): PmOutput {
 }
 
 export async function executeTask(task: Task): Promise<void> {
+  workerStatus = "running"
+  currentTaskId = task.id
+  currentTaskTitle = task.title
+  currentTaskStartedAt = new Date().toISOString()
+
   // Gate 1: 方針チェック（Worker実行前に弾く）
+  setCurrentStage("gate1", task.id, task.title)
   const gate1 = await runGate1(task)
   if (gate1.verdict === "kill") {
     console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
@@ -175,6 +228,7 @@ export async function executeTask(task: Task): Promise<void> {
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
     broadcast("task:updated", { id: task.id, status: "failed" })
+    resetWorkerState()
     return
   }
   if (gate1.verdict === "recycle") {
@@ -182,6 +236,7 @@ export async function executeTask(task: Task): Promise<void> {
     appendLog(task.id, "gate1", `[recycle] ${gate1.reasons.join("; ")}`)
     revertToPending(task.id)
     broadcast("task:updated", { id: task.id, status: "pending" })
+    resetWorkerState()
     return
   }
   emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
@@ -206,6 +261,7 @@ export async function executeTask(task: Task): Promise<void> {
 
   try {
     // Tester: テスト先行生成
+    setCurrentStage("tester")
     const spec = taskToPmOutput(task)
     let testFiles: string[] = []
     const GATE2_MAX_RETRIES = 1
@@ -222,6 +278,7 @@ export async function executeTask(task: Task): Promise<void> {
       }
 
       // Gate 2: テストファイル品質検証
+      setCurrentStage("gate2")
       const gate2 = runGate2(spec, testFiles, worktreePath)
 
       if (gate2.verdict === "go") {
@@ -246,12 +303,14 @@ export async function executeTask(task: Task): Promise<void> {
       }
     }
 
+    setCurrentStage("worker")
     const startTime = Date.now()
     const result = await runWorker(task, worktreePath, testFiles)
     const executionMs = Date.now() - startTime
     const facts = collectFacts(task.id, task.title, worktreePath, result.exit_code)
 
     // Gate 3: Observable Facts判定（原理1: 判定はコード）
+    setCurrentStage("gate3")
     const gate3 = runGate3(task.id, facts)
 
     if (gate3.verdict === "kill") {
@@ -291,6 +350,7 @@ export async function executeTask(task: Task): Promise<void> {
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
       // PR作成 → 自動マージ
+      setCurrentStage("pr")
       let prUrl: string | null = null
       if (facts.commit_hash) {
         prUrl = createPullRequest(task.id, task.title, facts)
@@ -346,6 +406,7 @@ export async function executeTask(task: Task): Promise<void> {
       const cleanupMsg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
       console.warn(`[scheduler] worktree cleanup failed for ${task.id}: ${cleanupMsg}`)
     }
+    resetWorkerState()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
 
@@ -365,6 +426,7 @@ export async function executeTask(task: Task): Promise<void> {
     } catch {
       // ignore cleanup errors on failure path
     }
+    resetWorkerState()
   }
 }
 
