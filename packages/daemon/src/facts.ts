@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process"
 import type { ObservableFacts } from "@devpane/shared"
 import { getWorktreeDiff, commitWorktree } from "./worktree.js"
+import { appendLog } from "./db.js"
 
 export function collectFacts(
   taskId: string,
@@ -21,8 +22,10 @@ export function collectFacts(
       encoding: "utf-8",
       timeout: 120000,
     })
-  } catch {
-    // Build failure is not fatal for facts collection
+  } catch (e) {
+    const buildErr = e as { stderr?: string; message?: string }
+    const detail = buildErr.stderr || buildErr.message || "unknown build error"
+    appendLog(taskId, "build", `[error] pnpm build failed: ${detail}`)
   }
 
   // Run tests if available
