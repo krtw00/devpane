@@ -5,8 +5,22 @@ import { getTask } from "./db.js"
 export interface Notifier {
   /** Send a free-form message */
   sendMessage(text: string): Promise<void>
+  /** Send a structured report (implementations may use rich formatting) */
+  sendReport(report: ReportPayload): Promise<void>
   /** Send a structured event notification (implementation decides which events to surface) */
   notify(event: AgentEvent): Promise<void>
+}
+
+/** Structured report data for rich formatting */
+export type ReportPayload = {
+  title: string
+  summary: string
+  sections: ReportSection[]
+}
+
+export type ReportSection = {
+  heading: string
+  body: string
 }
 
 /** Format an AgentEvent into a human-readable line (plain text, no platform markup) */
@@ -40,5 +54,6 @@ export function formatEventPlain(event: AgentEvent): string | null {
 /** No-op notifier for when no chat tool is configured */
 export class NullNotifier implements Notifier {
   async sendMessage(): Promise<void> {}
+  async sendReport(): Promise<void> {}
   async notify(): Promise<void> {}
 }

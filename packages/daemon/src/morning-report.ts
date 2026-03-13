@@ -2,7 +2,8 @@ import { getTasksSince } from "./db.js"
 import { getPipelineStats } from "./db/stats.js"
 import { fetchOpenPrs, assessRisk, type PrReport } from "./pr-agent.js"
 import { getNotifier } from "./notifier-factory.js"
-import { traceTask, formatPipelineTable, type PipelineTrace } from "./pipeline-trace.js"
+import { traceTask, type PipelineTrace } from "./pipeline-trace.js"
+import type { ReportPayload, ReportSection } from "./notifier.js"
 import type { Task } from "@devpane/shared"
 
 type ShiftSummary = {
@@ -37,44 +38,63 @@ function collectShiftData(since: string): ShiftSummary {
 }
 
 
-export function formatReport(summary: ShiftSummary): string {
+const STAGE_ICONS: Record<string, string> = {
+  pass: "✅", kill: "❌", recycle: "🔄", skip: "➖", pending: "⏳",
+}
+
+function formatTracesSection(traces: PipelineTrace[]): string {
+  if (traces.length === 0) return "タスクなし"
+
+  return traces.map(t => {
+    const title = t.title.length > 40 ? t.title.slice(0, 38) + ".." : t.title
+    const stages = [
+      `G1${STAGE_ICONS[t.gate1]}`,
+      `T${STAGE_ICONS[t.tester]}`,
+      `G2${STAGE_ICONS[t.gate2]}`,
+      `W${STAGE_ICONS[t.worker]}`,
+      `G3${STAGE_ICONS[t.gate3]}`,
+    ].join(" ")
+    const cost = t.costUsd > 0 ? `$${t.costUsd.toFixed(2)}` : ""
+    return `${title}\n  ${stages}  → ${t.outcome} ${cost}`
+  }).join("\n\n")
+}
+
+export function formatReport(summary: ShiftSummary): ReportPayload {
   const { period, completed, failed, totalCost, prReports, pipelineStats, traces } = summary
 
-  const lines: string[] = []
-
-  // Header + overview
   const total = completed.length + failed.length
   const successRate = total > 0 ? Math.round(completed.length / total * 100) : 0
-  lines.push(`[DevPane 朝レポート] (稼働 ${period})`)
-  lines.push(`${completed.length} 完了 / ${failed.length} 失敗 (成功率 ${successRate}%) | コスト $${totalCost.toFixed(2)}`)
-  lines.push("")
 
-  // Pipeline table — main content
+  const title = `DevPane 朝レポート (${period})`
+  const summaryText = `${completed.length} 完了 / ${failed.length} 失敗 (${successRate}%) | $${totalCost.toFixed(2)}`
+
+  const sections: ReportSection[] = []
+
   if (traces.length > 0) {
-    lines.push(formatPipelineTable(traces))
-    lines.push("")
+    sections.push({
+      heading: "パイプライン",
+      body: formatTracesSection(traces),
+    })
   }
 
-  // Open PRs
   if (prReports.length > 0) {
-    lines.push("未マージPR:")
-    for (const r of prReports) {
-      const icon = { recommended: "+", needs_review: "?", not_recommended: "x" }[r.risk]
-      lines.push(`  ${icon} #${r.pr.number} ${r.pr.title} (+${r.pr.additions}/-${r.pr.deletions}) ${r.reason}`)
-    }
-    lines.push("")
+    const prLines = prReports.map(r => {
+      const icon = { recommended: "✅", needs_review: "⚠️", not_recommended: "❌" }[r.risk] ?? "?"
+      return `${icon} #${r.pr.number} ${r.pr.title} (+${r.pr.additions}/-${r.pr.deletions})`
+    })
+    sections.push({ heading: "未マージPR", body: prLines.join("\n") })
   }
 
-  // Pipeline health
-  lines.push(`パイプライン: Gate通過率 ${Math.round(pipelineStats.gate3_pass_rate * 100)}% | 連続失敗 ${pipelineStats.consecutive_failures}`)
+  sections.push({
+    heading: "パイプライン健全性",
+    body: `Gate通過率 ${Math.round(pipelineStats.gate3_pass_rate * 100)}% | 連続失敗 ${pipelineStats.consecutive_failures}`,
+  })
 
-  // No activity
   if (total === 0) {
-    lines.push("")
-    lines.push("夜間の稼働タスクはありませんでした")
+    sections.push({ heading: "備考", body: "夜間の稼働タスクはありませんでした" })
   }
 
-  return lines.join("\n")
+  return { title, summary: summaryText, sections }
 }
 
 export async function sendMorningReport(shiftStartIso: string): Promise<void> {
@@ -82,5 +102,5 @@ export async function sendMorningReport(shiftStartIso: string): Promise<void> {
   const report = formatReport(summary)
 
   console.log(`[morning-report] sending: ${summary.completed.length} done, ${summary.failed.length} failed, $${summary.totalCost.toFixed(2)}`)
-  await getNotifier().sendMessage(report)
+  await getNotifier().sendReport(report)
 }
