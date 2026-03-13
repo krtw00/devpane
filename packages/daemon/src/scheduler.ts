@@ -582,6 +582,11 @@ export async function startScheduler(): Promise<void> {
 
     // WIP制限: 直列実行（WIP=1）— PRマージ後にmain pullしてから次タスク
     const openPrs = countOpenPrs()
+    if (openPrs === null) {
+      console.warn(`[scheduler] countOpenPrs failed, skipping task start for safety`)
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      continue
+    }
     if (openPrs >= config.MAX_OPEN_PRS) {
       console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${config.MAX_OPEN_PRS}), waiting...`)
       for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
