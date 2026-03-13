@@ -4,6 +4,7 @@ import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { emit } from "./events.js"
+import { broadcast } from "./ws.js"
 
 export type WorkerResult = {
   exit_code: number
@@ -88,11 +89,17 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
           // Log text deltas for progress visibility
           if (inner?.delta?.type === "text_delta" && inner.delta.text) {
             appendLog(task.id, "worker", inner.delta.text)
+            broadcast("worker:text", { taskId: task.id, text: inner.delta.text })
           }
           // Log tool use starts
           if (inner?.type === "content_block_start" && inner.content_block?.type === "tool_use") {
             const name = inner.content_block.name
             appendLog(task.id, "worker", `[tool] ${name}`)
+            broadcast("worker:tool", { taskId: task.id, tool: name })
+          }
+          // Log tool input for visibility
+          if (inner?.delta?.type === "input_json_delta" && inner.delta.partial_json) {
+            broadcast("worker:tool_input", { taskId: task.id, json: inner.delta.partial_json })
           }
         }
 
