@@ -48,4 +48,18 @@ describe("collectFacts: pnpm build失敗時のログ記録", () => {
       expect.stringContaining("build"),
     )
   })
+
+  it("pnpm buildが失敗した場合、exit_codeが1に上書きされる", () => {
+    const facts = collectFacts("task-build-fail-2", "Fix types", "/tmp/worktree", 0)
+
+    // ビルド失敗時はexit_codeが0のままではなく1に反映されるべき
+    expect(facts.exit_code).toBe(1)
+  })
+
+  it("pnpm buildが失敗した場合、exit_codeが元のexit_code以上になる", () => {
+    // 元々exit_code=1の場合でも、ビルド失敗で上書きされても問題ない
+    const facts = collectFacts("task-build-fail-3", "Fix types", "/tmp/worktree", 1)
+
+    expect(facts.exit_code).toBeGreaterThanOrEqual(1)
+  })
 })
