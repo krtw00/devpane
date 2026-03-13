@@ -7,9 +7,11 @@ export function getPipelineStats() {
     SELECT
       COUNT(*) FILTER (WHERE json_extract(payload, '$.verdict') = 'go') AS pass_count,
       COUNT(*) AS total
-    FROM agent_events
-    WHERE type IN ('gate.passed', 'gate.rejected')
-    ORDER BY timestamp DESC LIMIT 20
+    FROM (
+      SELECT * FROM agent_events
+      WHERE type IN ('gate.passed', 'gate.rejected')
+      ORDER BY timestamp DESC LIMIT 20
+    )
   `).get() as { pass_count: number; total: number }
 
   const avgExec = d.prepare(`
