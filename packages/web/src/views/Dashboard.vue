@@ -189,24 +189,19 @@ async function submitTask() {
       <div class="hdr">
         <div class="brand">
           <h1>DevPane</h1>
-          <span class="sub">the office window</span>
+          <span class="sub">autonomous dev team</span>
         </div>
         <div class="stats-bar" v-if="pipeline">
-          <span class="stat">G3: {{ Math.round((pipeline.gate3_pass_rate ?? 0) * 100) }}%</span>
-          <span class="stat">today: {{ pipeline.tasks_today ?? 0 }}</span>
-          <span class="stat fail" v-if="pipeline.consecutive_failures > 0">fail streak: {{ pipeline.consecutive_failures }}</span>
+          <span class="stat">G3通過率: {{ Math.round((pipeline.gate3_pass_rate ?? 0) * 100) }}%</span>
+          <span class="stat">本日: {{ pipeline.tasks_today ?? 0 }}件</span>
+          <span class="stat fail" v-if="pipeline.consecutive_failures > 0">連続失敗: {{ pipeline.consecutive_failures }}</span>
         </div>
-        <nav>
-          <router-link to="/">Office</router-link>
-          <router-link to="/events">Events</router-link>
-          <router-link to="/memories">Memory</router-link>
-          <router-link to="/cost">Cost</router-link>
-        </nav>
+        <div class="spacer" />
         <div class="ctrl">
           <button class="ctrl-btn" :class="scheduler?.paused ? 'resume' : 'pause'" @click="togglePause" :disabled="toggling || !scheduler">
-            {{ scheduler?.paused ? '▶ resume' : '⏸ pause' }}
+            {{ scheduler?.paused ? '▶ 再開' : '⏸ 一時停止' }}
           </button>
-          <span class="conn" :class="connected ? 'on' : 'off'"><span class="dot"/>{{ connected ? 'live' : 'off' }}</span>
+          <span class="conn" :class="connected ? 'on' : 'off'"><span class="dot"/>{{ connected ? '接続中' : '切断' }}</span>
         </div>
       </div>
     </header>
@@ -224,10 +219,10 @@ async function submitTask() {
     <div v-else class="pipeline-bar">
       <div class="pipe-info">
         <span class="pipe-title idle-title">
-          <template v-if="scheduler?.pm.status === 'running'">PM generating tasks...</template>
-          <template v-else-if="!scheduler?.withinActiveHours">sleeping (outside active hours)</template>
-          <template v-else-if="scheduler?.paused">paused</template>
-          <template v-else>idle</template>
+          <template v-if="scheduler?.pm.status === 'running'">PM タスク生成中...</template>
+          <template v-else-if="!scheduler?.withinActiveHours">稼働時間外（休憩中）</template>
+          <template v-else-if="scheduler?.paused">一時停止中</template>
+          <template v-else>待機中</template>
         </span>
       </div>
     </div>
@@ -238,12 +233,12 @@ async function submitTask() {
       <div class="pane" :class="{ active: scheduler?.pm.status === 'running' }">
         <div class="pane-hdr">
           <span class="pane-name">PM</span>
-          <span class="pane-st" :class="scheduler?.pm.status">{{ scheduler?.pm.status ?? 'idle' }}</span>
-          <button class="pane-clear" @click="pmLog = []" v-if="pmLog.length > 0" title="clear">×</button>
+          <span class="pane-st" :class="scheduler?.pm.status">{{ scheduler?.pm.status === 'running' ? '実行中' : '待機' }}</span>
+          <button class="pane-clear" @click="pmLog = []" v-if="pmLog.length > 0" title="クリア">×</button>
         </div>
         <div ref="pmLogEl" class="pane-log">
           <div v-for="(l, i) in pmLog" :key="i" :class="['log-line', `t-${l.type}`]">{{ l.text }}</div>
-          <div v-if="pmLog.length === 0" class="log-empty">waiting for PM...</div>
+          <div v-if="pmLog.length === 0" class="log-empty">PMの出力を待機中...</div>
         </div>
       </div>
 
@@ -252,14 +247,14 @@ async function submitTask() {
         <div class="pane-hdr">
           <span class="pane-name">Worker</span>
           <span class="pane-st" :class="scheduler?.worker.status">
-            {{ scheduler?.worker.status ?? 'idle' }}
+            {{ scheduler?.worker.status === 'running' ? '実行中' : '待機' }}
             <template v-if="scheduler?.worker.stage"> · {{ scheduler.worker.stage }}</template>
           </span>
-          <button class="pane-clear" @click="workerLog = []" v-if="workerLog.length > 0" title="clear">×</button>
+          <button class="pane-clear" @click="workerLog = []" v-if="workerLog.length > 0" title="クリア">×</button>
         </div>
         <div ref="workerLogEl" class="pane-log">
           <div v-for="(l, i) in workerLog" :key="i" :class="['log-line', `t-${l.type}`]">{{ l.text }}</div>
-          <div v-if="workerLog.length === 0" class="log-empty">waiting for worker...</div>
+          <div v-if="workerLog.length === 0" class="log-empty">Workerの出力を待機中...</div>
         </div>
       </div>
     </div>
@@ -269,15 +264,15 @@ async function submitTask() {
       <!-- Task List -->
       <div class="tasks-panel">
         <div class="tasks-hdr">
-          <span class="tasks-title">Tasks</span>
+          <span class="tasks-title">タスク</span>
           <div class="filter-tabs">
-            <button :class="{ active: taskFilter === 'all' }" @click="taskFilter = 'all'">all {{ tasks.length }}</button>
+            <button :class="{ active: taskFilter === 'all' }" @click="taskFilter = 'all'">全て {{ tasks.length }}</button>
             <button :class="{ active: taskFilter === 'done' }" @click="taskFilter = 'done'">✓{{ counts.done }}</button>
             <button :class="{ active: taskFilter === 'pending' }" @click="taskFilter = 'pending'">⏳{{ counts.pending }}</button>
             <button :class="{ active: taskFilter === 'running' }" @click="taskFilter = 'running'">⚡{{ counts.running }}</button>
             <button :class="{ active: taskFilter === 'failed', bad: counts.failed > 0 }" @click="taskFilter = 'failed'">✗{{ counts.failed }}</button>
           </div>
-          <button class="add-btn" @click="showModal = true; taskForm = { title: '', description: '', priority: 50 }" title="new task">+</button>
+          <button class="add-btn" @click="showModal = true; taskForm = { title: '', description: '', priority: 50 }" title="タスク追加">+</button>
         </div>
         <ul class="tlist">
           <li v-for="task in filteredTasks" :key="task.id" :class="`s-${task.status}`">
@@ -288,19 +283,19 @@ async function submitTask() {
             </router-link>
           </li>
         </ul>
-        <div v-if="!loading && tasks.length === 0" class="empty">no tasks yet</div>
+        <div v-if="!loading && tasks.length === 0" class="empty">タスクなし</div>
       </div>
 
       <!-- Chat -->
       <div class="chat-panel">
-        <div class="chat-hdr">Chat <span class="dot" :class="connected ? 'on' : ''"/></div>
+        <div class="chat-hdr">チャット <span class="dot" :class="connected ? 'on' : ''"/></div>
         <div ref="chatEl" class="chat-log">
           <div v-for="(m, i) in chatLog" :key="i" class="chat-msg"><span class="cf">[{{ m.from }}]</span> {{ m.text }}</div>
-          <div v-if="chatLog.length === 0" class="log-empty">send instructions to the team...</div>
+          <div v-if="chatLog.length === 0" class="log-empty">チームに指示を送る...</div>
         </div>
         <form class="chat-form" @submit.prevent="send">
-          <input v-model="chatInput" placeholder="message..." :disabled="sending" @keydown.ctrl.enter.prevent="send" />
-          <button type="submit" :disabled="sending || !chatInput.trim()">send</button>
+          <input v-model="chatInput" placeholder="メッセージ..." :disabled="sending" @keydown.ctrl.enter.prevent="send" />
+          <button type="submit" :disabled="sending || !chatInput.trim()">送信</button>
         </form>
       </div>
     </div>
@@ -309,14 +304,14 @@ async function submitTask() {
     <Teleport to="body">
       <div v-if="showModal" class="modal-bg" @click.self="showModal = false">
         <div class="modal">
-          <h3>New Task</h3>
+          <h3>タスク追加</h3>
           <form @submit.prevent="submitTask">
-            <label>Title<input v-model="taskForm.title" required /></label>
-            <label>Description<textarea v-model="taskForm.description" required rows="3" /></label>
-            <label>Priority<input v-model.number="taskForm.priority" type="number" min="0" max="100" /></label>
+            <label>タイトル<input v-model="taskForm.title" required /></label>
+            <label>説明<textarea v-model="taskForm.description" required rows="3" /></label>
+            <label>優先度<input v-model.number="taskForm.priority" type="number" min="0" max="100" /></label>
             <div class="mact">
-              <button type="button" @click="showModal = false">Cancel</button>
-              <button type="submit" class="pri" :disabled="submitting">Create</button>
+              <button type="button" @click="showModal = false">キャンセル</button>
+              <button type="submit" class="pri" :disabled="submitting">作成</button>
             </div>
           </form>
         </div>
@@ -350,10 +345,7 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
 }
 .stat.fail { color: #f85149; }
 
-nav { display: flex; gap: 0.3rem; margin-left: auto; }
-nav a { color: #484f58; text-decoration: none; font-size: 0.7rem; padding: 0.15rem 0.35rem; border-radius: 3px; }
-nav a:hover { color: #c9d1d9; }
-nav a.router-link-exact-active { color: #58a6ff; background: #58a6ff15; }
+.spacer { flex: 1; }
 
 .ctrl { display: flex; align-items: center; gap: 0.5rem; }
 .ctrl-btn {
