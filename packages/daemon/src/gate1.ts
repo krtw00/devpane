@@ -131,7 +131,6 @@ export async function runGate1(task: Task): Promise<Gate1Result> {
   // Phase 1: ルールベース
   const ruleResult = runGate1Rules(task)
   if (ruleResult.verdict === "kill") {
-    emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: ruleResult.reasons.join("; ") })
     appendLog(task.id, "gate1", `[kill:rule] ${ruleResult.reasons.join("; ")}`)
     return ruleResult
   }
@@ -141,7 +140,6 @@ export async function runGate1(task: Task): Promise<Gate1Result> {
   const llmResult = await runGate1Llm(task)
 
   if (llmResult.verdict === "kill") {
-    emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: llmResult.reasons.join("; ") })
     appendLog(task.id, "gate1", `[kill:llm] ${llmResult.reasons.join("; ")}`)
     return llmResult
   }
@@ -151,7 +149,6 @@ export async function runGate1(task: Task): Promise<Gate1Result> {
     return llmResult
   }
 
-  emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
   appendLog(task.id, "gate1", "[pass] rule + LLM checks passed")
   return { verdict: "go", reasons: [] }
 }

@@ -215,6 +215,24 @@ describe("gate.rejected → agent_events DB記録", () => {
     expect(rejected!.reason).toContain("tests failed")
   })
 
+  it("Gate1 kill時にgate.rejectedが1回だけ記録される（二重発火しない）", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockRunGate1.mockResolvedValue({ verdict: "kill", reasons: ["duplicate task"] })
+    const task = makeTask()
+
+    await executeTask(task)
+
+    const events = getAgentEvents({ type: "gate.rejected" })
+    const gate1Rejected = events.filter(
+      (e) => e.type === "gate.rejected" && "gate" in e && e.gate === "gate1",
+    )
+    // gate1.ts側で1回だけemitされ、scheduler.ts側では重複emitしないこと
+    expect(gate1Rejected).toHaveLength(1)
+    const first = gate1Rejected[0] as Extract<AgentEvent, { type: "gate.rejected" }>
+    expect(first.taskId).toBe(task.id)
+    expect(first.verdict).toBe("kill")
+  })
+
   it("Gate1 go → agent_eventsにgate.rejectedが記録されない", async () => {
     const { executeTask } = await import("../scheduler.js")
     const task = makeTask()
