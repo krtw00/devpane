@@ -84,9 +84,8 @@ export function collectFacts(
         errors: errorMatch ? Number(errorMatch[1]) : 1,
         exit_code: err.status ?? 1,
       }
-    } else {
-      lintResult = { errors: 1, exit_code: 1 }
     }
+    // else: statusプロパティなし = spawn失敗（ENOENT等）→ lintResultはundefinedのまま
   }
 
   return {
