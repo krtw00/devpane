@@ -11,7 +11,7 @@ export function killAllClaude(): void {
 }
 
 export function spawnClaude(args: string[], cwd: string, timeoutMs?: number): Promise<string> {
-  return new Promise((resolve, reject) => {
+  const p = new Promise<string>((resolve, reject) => {
     const env = { ...process.env }
     delete env.CLAUDECODE
 
@@ -23,15 +23,24 @@ export function spawnClaude(args: string[], cwd: string, timeoutMs?: number): Pr
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
 
+    let timedOut = false
     const timeout = setTimeout(() => {
+      timedOut = true
       proc.kill("SIGTERM")
     }, timeoutMs ?? config.PM_TIMEOUT_MS)
 
     proc.on("close", (code, signal) => {
       activeProcs.delete(proc)
       clearTimeout(timeout)
-      if (signal) {
-        reject(new Error(`claude killed by signal ${signal} (timeout?). stderr: ${stderr.slice(0, 500)}`))
+      proc.stdout.removeAllListeners("data")
+      proc.stderr.removeAllListeners("data")
+      let chunk
+      while (null !== (chunk = proc.stdout.read())) { stdout += chunk.toString() }
+      while (null !== (chunk = proc.stderr.read())) { stderr += chunk.toString() }
+      if (timedOut) {
+        reject(new Error(`claude killed by timeout after ${timeoutMs ?? config.PM_TIMEOUT_MS}ms. stderr: ${stderr.slice(0, 500)}`))
+      } else if (signal) {
+        reject(new Error(`claude killed by signal ${signal}. stderr: ${stderr.slice(0, 500)}`))
       } else if (code !== 0) {
         const detail = stderr || stdout
         reject(new Error(`claude exited ${code}: ${detail.slice(0, 1000)}`))
@@ -47,4 +56,6 @@ export function spawnClaude(args: string[], cwd: string, timeoutMs?: number): Pr
 
     proc.stdin.end()
   })
+  p.catch(() => {})
+  return p
 }
