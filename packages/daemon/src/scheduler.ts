@@ -395,15 +395,18 @@ export async function executeTask(task: Task): Promise<void> {
       }
 
       // Run registered post-task hooks (SPC, memory, effect measurement)
-      const hookData: TaskCompletedData = {
-        task,
-        costUsd: result.cost_usd,
-        numTurns: result.num_turns,
-        executionMs,
-        facts,
-        prUrl,
+      // PR作成が成功した場合のみhooksを実行する
+      if (prUrl) {
+        const hookData: TaskCompletedData = {
+          task,
+          costUsd: result.cost_usd,
+          numTurns: result.num_turns,
+          executionMs,
+          facts,
+          prUrl,
+        }
+        await runHooks("task.completed", hookData)
       }
-      await runHooks("task.completed", hookData)
     }
 
     console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)

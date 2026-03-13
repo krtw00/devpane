@@ -268,6 +268,10 @@ describe("SPC metrics recording for failed tasks", () => {
     const schedulerHooks = await import("../scheduler-hooks.js")
     const runHooksSpy = vi.spyOn(schedulerHooks, "runHooks").mockResolvedValue()
 
+    // PR作成が成功するようにモック設定（runHooksはPR成功時のみ実行される）
+    const { createPullRequest } = await import("../worktree.js")
+    vi.mocked(createPullRequest).mockReturnValue("https://github.com/test/pr/1")
+
     mockRunGate3.mockReturnValue({
       verdict: "go",
       reasons: [],
