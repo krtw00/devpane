@@ -248,7 +248,6 @@ export async function executeTask(task: Task): Promise<void> {
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
   startTask(task.id, workerId)
-  emit({ type: "task.started", taskId: task.id, workerId })
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
   let worktreePath: string
@@ -355,7 +354,6 @@ export async function executeTask(task: Task): Promise<void> {
         console.log(`[scheduler] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         requeueTask(task.id)
         appendLog(task.id, "system", `[gate3] recycled (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
-        emit({ type: "task.started", taskId: task.id, workerId: "requeued" })
         broadcast("task:updated", { id: task.id, status: "pending" })
       } else {
         console.log(`[scheduler] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
@@ -366,6 +364,7 @@ export async function executeTask(task: Task): Promise<void> {
       }
     } else {
       // Gate 3 passed → PR作成
+      emit({ type: "task.started", taskId: task.id, workerId })
       emit({ type: "gate.passed", taskId: task.id, gate: "gate3" })
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
