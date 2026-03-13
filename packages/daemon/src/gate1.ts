@@ -106,14 +106,22 @@ async function runGate1Llm(task: Task): Promise<Gate1Result> {
       text = stdout
     }
 
-    const match = text.match(/\{[\s\S]*\}/)
+    const match = text.match(/\{[\s\S]*?\}/)
     if (!match) {
-      console.error(`[gate1] LLM output not parseable, recycling task`)
+      console.error(`[gate1] LLM output not parseable, recycling task. Raw output: ${text.slice(0, 200)}`)
       emit({ type: "gate.llm_fallback", taskId: task.id, gate: "gate1", error: "LLM output not parseable" })
       return { verdict: "recycle", reasons: ["LLM output not parseable"] }
     }
 
-    const parsed = JSON.parse(match[0])
+    let parsed: { verdict?: string; reason?: string }
+    try {
+      parsed = JSON.parse(match[0])
+    } catch (parseErr) {
+      const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+      console.error(`[gate1] JSON.parse failed: ${parseMsg}. Extracted: ${match[0].slice(0, 200)}`)
+      emit({ type: "gate.llm_fallback", taskId: task.id, gate: "gate1", error: `JSON.parse failed: ${parseMsg}` })
+      return { verdict: "recycle", reasons: ["LLM output not parseable"] }
+    }
     if (parsed.verdict === "kill") {
       return { verdict: "kill", reasons: [parsed.reason ?? "LLM rejected"] }
     }
