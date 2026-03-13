@@ -367,11 +367,9 @@ export async function executeTask(task: Task): Promise<void> {
     } else {
       // Gate 3 passed → PR作成
       emit({ type: "gate.passed", taskId: task.id, gate: "gate3" })
-      finishTask(task.id, "done", JSON.stringify(facts))
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
+      const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
 
-      emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
-      broadcast("task:updated", { id: task.id, status: "done", result: facts })
       console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
       // PR作成 → 自動マージ
@@ -394,12 +392,20 @@ export async function executeTask(task: Task): Promise<void> {
           }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)
-          finishTask(task.id, "failed", JSON.stringify({ ...facts, pr_creation_failed: true }))
-          recordTaskMetrics(task.id, 0, 0, 0)
           emit({ type: "pr.failed", taskId: task.id })
-          broadcast("task:updated", { id: task.id, status: "failed" })
         }
       }
+
+      // finishTaskはPR作成の成否が確定した後に1回だけ呼ぶ
+      if (prUrl) {
+        finishTask(task.id, "done", JSON.stringify(facts))
+        emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
+        broadcast("task:updated", { id: task.id, status: "done", result: facts })
+      } else {
+        finishTask(task.id, "failed", JSON.stringify({ ...facts, pr_creation_failed: true }))
+        broadcast("task:updated", { id: task.id, status: "failed" })
+      }
+      recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
 
       // Run registered post-task hooks (SPC, memory, effect measurement)
       // PR作成が成功した場合のみhooksを実行する

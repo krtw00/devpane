@@ -134,12 +134,14 @@ vi.mock("../effect-measure.js", () => ({
 // DB: use real in-memory SQLite
 import { initDb, closeDb, createTask } from "../db.js"
 
+const mockFinishTask = vi.fn()
 vi.mock("../db.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db.js")>()
   return {
     ...actual,
     appendLog: vi.fn(),
     updateTaskCost: vi.fn(),
+    finishTask: (...args: unknown[]) => mockFinishTask(...args),
   }
 })
 
@@ -175,7 +177,7 @@ function goodWorkerResult(): WorkerResult {
   }
 }
 
-describe("PR作成失敗時にrecordTaskMetricsが呼ばれる", () => {
+describe("PR作成失敗時のメトリクスとfinishTask", () => {
   beforeEach(() => {
     initDb(":memory:", migrationsDir)
     vi.clearAllMocks()
@@ -194,7 +196,7 @@ describe("PR作成失敗時にrecordTaskMetricsが呼ばれる", () => {
     closeDb()
   })
 
-  it("Gate3 pass → PR作成失敗(null) → recordTaskMetrics(taskId, 0, 0, 0)が呼ばれる", async () => {
+  it("Gate3 pass → PR作成失敗(null) → recordTaskMetricsに実値(cost_usd, executionMs, diffSize)が渡される", async () => {
     mockCreatePullRequest.mockReturnValue(null)
 
     const { executeTask } = await import("../scheduler.js")
@@ -205,11 +207,39 @@ describe("PR作成失敗時にrecordTaskMetricsが呼ばれる", () => {
     // PR作成は試みられた
     expect(mockCreatePullRequest).toHaveBeenCalled()
 
-    // recordTaskMetricsが呼ばれることを検証（他の失敗パスと同様にゼロ値）
-    expect(mockRecordTaskMetrics).toHaveBeenCalledWith(task.id, 0, 0, 0)
+    // recordTaskMetricsがゼロ値ではなく実値で呼ばれることを検証
+    // goodWorkerResult().cost_usd = 0.05, diffSize = additions(10) + deletions(2) = 12
+    expect(mockRecordTaskMetrics).toHaveBeenCalledWith(
+      task.id,
+      0.05,
+      expect.any(Number), // executionMs: 正確な値はタイミング依存だが0より大きい
+      12,
+    )
+    // ゼロ値での呼び出しが無いことを検証
+    const zeroCalls = mockRecordTaskMetrics.mock.calls.filter(
+      (call: unknown[]) => call[1] === 0 && call[2] === 0 && call[3] === 0,
+    )
+    expect(zeroCalls).toHaveLength(0)
   })
 
-  it("Gate3 pass → PR作成成功 → recordTaskMetricsはPR失敗パスでは呼ばれない", async () => {
+  it("Gate3 pass → PR作成失敗(null) → finishTaskは1回だけ呼ばれる（二重呼び出しなし）", async () => {
+    mockCreatePullRequest.mockReturnValue(null)
+
+    const { executeTask } = await import("../scheduler.js")
+    const task = makeTask()
+
+    await executeTask(task)
+
+    // finishTaskが1回だけ呼ばれることを検証
+    const finishCalls = mockFinishTask.mock.calls.filter(
+      (call: unknown[]) => call[0] === task.id,
+    )
+    expect(finishCalls).toHaveLength(1)
+    // PR作成失敗時はstatus="failed"
+    expect(finishCalls[0][1]).toBe("failed")
+  })
+
+  it("Gate3 pass → PR作成成功 → finishTaskは1回だけ呼ばれる（status='done'）", async () => {
     mockCreatePullRequest.mockReturnValue("https://github.com/test/pr/1")
     mockAutoMergePr.mockReturnValue(true)
 
@@ -218,11 +248,27 @@ describe("PR作成失敗時にrecordTaskMetricsが呼ばれる", () => {
 
     await executeTask(task)
 
-    // PR成功時はこのパスのrecordTaskMetricsは呼ばれない
-    // （成功時のメトリクス記録はscheduler-pluginsのhook経由）
-    const calls = mockRecordTaskMetrics.mock.calls.filter(
+    // finishTaskが1回だけ呼ばれることを検証
+    const finishCalls = mockFinishTask.mock.calls.filter(
+      (call: unknown[]) => call[0] === task.id,
+    )
+    expect(finishCalls).toHaveLength(1)
+    expect(finishCalls[0][1]).toBe("done")
+  })
+
+  it("Gate3 pass → PR作成成功 → recordTaskMetricsはゼロ値パスでは呼ばれない", async () => {
+    mockCreatePullRequest.mockReturnValue("https://github.com/test/pr/1")
+    mockAutoMergePr.mockReturnValue(true)
+
+    const { executeTask } = await import("../scheduler.js")
+    const task = makeTask()
+
+    await executeTask(task)
+
+    // ゼロ値での呼び出しが無いことを検証
+    const zeroCalls = mockRecordTaskMetrics.mock.calls.filter(
       (call: unknown[]) => call[1] === 0 && call[2] === 0 && call[3] === 0,
     )
-    expect(calls).toHaveLength(0)
+    expect(zeroCalls).toHaveLength(0)
   })
 })
