@@ -70,7 +70,7 @@ export function createPullRequest(taskId: string, title: string, facts: { files_
 
   // Push branch to origin
   try {
-    git("push", "origin", branch)
+    execFileSync("git", ["push", "origin", branch], { cwd: config.PROJECT_ROOT, encoding: "utf-8", timeout: 60_000 })
   } catch (err) {
     console.error(`[worktree] push failed for ${branch}:`, err instanceof Error ? err.message : err)
     return null
@@ -97,7 +97,7 @@ export function createPullRequest(taskId: string, title: string, facts: { files_
       "--head", branch,
       "--title", `task-${taskId}: ${title}`,
       "--body", body,
-    ], { cwd: config.PROJECT_ROOT, encoding: "utf-8" }).trim()
+    ], { cwd: config.PROJECT_ROOT, encoding: "utf-8", timeout: 60_000 }).trim()
     return prUrl
   } catch (err) {
     console.error(`[worktree] PR creation failed:`, err instanceof Error ? err.message : err)
