@@ -330,6 +330,8 @@ export async function executeTask(task: Task): Promise<void> {
     setCurrentStage("gate3")
     const gate3 = runGate3(task.id, facts)
 
+    let prUrl: string | null = null
+
     if (gate3.verdict === "kill") {
       console.log(`[scheduler] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "kill", reason: gate3.reasons.join("; ") })
@@ -374,7 +376,6 @@ export async function executeTask(task: Task): Promise<void> {
 
       // PR作成 → 自動マージ
       setCurrentStage("pr")
-      let prUrl: string | null = null
       if (facts.commit_hash) {
         prUrl = createPullRequest(task.id, task.title, facts)
         if (prUrl) {
@@ -425,7 +426,7 @@ export async function executeTask(task: Task): Promise<void> {
     }
 
     // Cleanup worktree (keep branch if PR was created)
-    const hasPr = gate3.verdict === "go" && facts.commit_hash
+    const hasPr = !!prUrl
     try {
       removeWorktree(task.id, !!hasPr)
       console.log(`[scheduler] cleaned up worktree for task ${task.id}${hasPr ? " (branch kept for PR)" : ""}`)
