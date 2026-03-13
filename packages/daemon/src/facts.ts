@@ -53,7 +53,7 @@ export function collectFacts(
       const failMatch = output.match(/(\d+)\s+fail/i)
       testResult = {
         passed: passMatch ? Number(passMatch[1]) : 0,
-        failed: failMatch ? Number(failMatch[1]) : 1,
+        failed: failMatch ? Number(failMatch[1]) : 0,
         exit_code: err.status ?? 1,
       }
     } else {
