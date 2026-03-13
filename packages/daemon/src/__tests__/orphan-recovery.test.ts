@@ -32,7 +32,7 @@ describe("recoverOrphanedTasks", () => {
     const updated = db.prepare(`SELECT status, retry_count FROM tasks WHERE id = ?`).get(task.id) as { status: string; retry_count: number }
     expect(updated.status).toBe("pending")
     expect(updated.retry_count).toBe(1)
-    expect(recovered).toBe(1)
+    expect(recovered).toHaveLength(1)
   })
 
   it("marks orphaned tasks as failed when retry limit exceeded", () => {
@@ -47,7 +47,7 @@ describe("recoverOrphanedTasks", () => {
 
     const updated = db.prepare(`SELECT status FROM tasks WHERE id = ?`).get(task.id) as { status: string }
     expect(updated.status).toBe("failed")
-    expect(recovered).toBe(1)
+    expect(recovered).toHaveLength(1)
   })
 
   it("does not recover tasks that have not timed out yet", () => {
@@ -59,6 +59,6 @@ describe("recoverOrphanedTasks", () => {
     const db = getDb()
     const updated = db.prepare(`SELECT status FROM tasks WHERE id = ?`).get(task.id) as { status: string }
     expect(updated.status).toBe("running")
-    expect(recovered).toBe(0)
+    expect(recovered).toHaveLength(0)
   })
 })

@@ -491,19 +491,19 @@ function stopDailyReportTimer(): void {
   }
 }
 
-function recoverOrphanTasks(): void {
+export function recoverOrphanTasks(): void {
   const orphans = getTasksByStatus("running")
   if (orphans.length === 0) return
-  const recovered = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
-  if (recovered > 0) {
-    console.log(`[scheduler] recovered ${recovered} orphan tasks (timeout: ${config.WORKER_TIMEOUT_MS}ms, maxRetries: ${config.MAX_RETRIES})`)
-    for (const t of orphans) {
+  const recoveredIds = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
+  if (recoveredIds.length > 0) {
+    console.log(`[scheduler] recovered ${recoveredIds.length} orphan tasks (timeout: ${config.WORKER_TIMEOUT_MS}ms, maxRetries: ${config.MAX_RETRIES})`)
+    for (const id of recoveredIds) {
       try {
-        removeWorktree(t.id)
+        removeWorktree(id)
       } catch {
         // ignore cleanup errors during recovery
       }
-      appendLog(t.id, "system", "[recovery] orphan task recovered on daemon restart")
+      appendLog(id, "system", "[recovery] orphan task recovered on daemon restart")
     }
   }
 }

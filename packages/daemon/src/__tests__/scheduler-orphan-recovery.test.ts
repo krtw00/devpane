@@ -49,7 +49,7 @@ describe("scheduler orphan recovery (db/tasks.ts unified)", () => {
 
     // recoverOrphanedTasks が返すタスク数に基づき removeWorktree が呼ばれるべき
     // 実装変更後: scheduler が recoverOrphanedTasks の結果に対して removeWorktree を呼ぶ
-    expect(recovered).toBe(1)
+    expect(recovered).toHaveLength(1)
 
     const updated = db.prepare(`SELECT status, retry_count FROM tasks WHERE id = ?`).get(task.id) as {
       status: string
@@ -73,7 +73,7 @@ describe("scheduler orphan recovery (db/tasks.ts unified)", () => {
 
     const recovered = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
 
-    expect(recovered).toBe(1)
+    expect(recovered).toHaveLength(1)
     const updated = db.prepare(`SELECT status FROM tasks WHERE id = ?`).get(task.id) as { status: string }
     expect(updated.status).toBe("failed")
   })
@@ -84,7 +84,7 @@ describe("scheduler orphan recovery (db/tasks.ts unified)", () => {
 
     const recovered = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
 
-    expect(recovered).toBe(0)
+    expect(recovered).toHaveLength(0)
     const db = getDb()
     const updated = db.prepare(`SELECT status FROM tasks WHERE id = ?`).get(task.id) as { status: string }
     expect(updated.status).toBe("running")
@@ -107,7 +107,7 @@ describe("scheduler orphan recovery (db/tasks.ts unified)", () => {
     })
 
     const recovered = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
-    expect(recovered).toBe(3)
+    expect(recovered).toHaveLength(3)
 
     for (const t of tasks) {
       const updated = db.prepare(`SELECT status, retry_count FROM tasks WHERE id = ?`).get(t.id) as {
@@ -138,7 +138,7 @@ describe("scheduler orphan recovery (db/tasks.ts unified)", () => {
     )
 
     const recovered = recoverOrphanedTasks(config.WORKER_TIMEOUT_MS, config.MAX_RETRIES)
-    expect(recovered).toBe(2)
+    expect(recovered).toHaveLength(2)
 
     const retryableRow = db.prepare(`SELECT status, retry_count FROM tasks WHERE id = ?`).get(retryable.id) as {
       status: string

@@ -87,9 +87,9 @@ export function getTasksSince(timestamp: string): Task[] {
 /**
  * Recover orphaned tasks left in 'running' status after daemon restart.
  * Tasks whose started_at exceeds timeoutMs are requeued (if under maxRetries) or failed.
- * Returns the number of recovered tasks.
+ * Returns the IDs of recovered tasks.
  */
-export function recoverOrphanedTasks(timeoutMs: number, maxRetries: number): number {
+export function recoverOrphanedTasks(timeoutMs: number, maxRetries: number): string[] {
   const db = getDb()
   const cutoff = new Date(Date.now() - timeoutMs).toISOString()
   const orphans = db.prepare(
@@ -108,5 +108,5 @@ export function recoverOrphanedTasks(timeoutMs: number, maxRetries: number): num
     }
   }
 
-  return orphans.length
+  return orphans.map(t => t.id)
 }
