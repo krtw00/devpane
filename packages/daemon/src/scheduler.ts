@@ -550,7 +550,7 @@ export async function startScheduler(): Promise<void> {
     if (!circuitBreaker.canProceed()) {
       const backoff = circuitBreaker.getBackoffSec()
       console.log(`[scheduler] circuit open, skipping cycle (backoff: ${backoff}s)`)
-      await sleep(backoff * 1000)
+      for (let i = 0; i < backoff && alive && !paused; i++) await sleep(1000)
       continue
     }
 
