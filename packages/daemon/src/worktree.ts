@@ -185,7 +185,8 @@ export function countOpenPrs(): number {
     }).trim()
     const prs = JSON.parse(result)
     return Array.isArray(prs) ? prs.length : 0
-  } catch {
+  } catch (err) {
+    console.warn('[worktree] countOpenPrs failed:', err)
     return 0
   }
 }

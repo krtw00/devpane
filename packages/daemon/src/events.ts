@@ -19,7 +19,7 @@ function getQuerySinceStmt() {
 export function emit(event: AgentEvent): void {
   insertAgentEvent(event.type, event)
   broadcast("event", event)
-  getNotifier().notify(event).catch(() => {})
+  getNotifier().notify(event).catch((err) => { console.warn('[notifier] failed:', err) })
 }
 
 export function safeEmit(raw: unknown): boolean {
