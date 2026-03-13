@@ -76,7 +76,7 @@ describe("tester timeout handling", () => {
     const { emit } = await import("../events.js")
     const { runTester } = await import("../tester.js")
 
-    const promise = runTester(spec, "/tmp/worktree")
+    const promise = runTester(spec, "/tmp/worktree", "test-task-1")
 
     // Advance past idle timeout
     vi.advanceTimersByTime(5_000 + 30_000)
@@ -91,6 +91,27 @@ describe("tester timeout handling", () => {
         rootCause: "timeout",
       }),
     )
+  })
+
+  it("emits task.failed with the correct taskId (not hardcoded 'tester')", async () => {
+    const { emit } = await import("../events.js")
+    const { runTester } = await import("../tester.js")
+
+    const taskId = "task-abc-123"
+    const promise = runTester(spec, "/tmp/worktree", taskId)
+
+    // Advance past idle timeout
+    vi.advanceTimersByTime(5_000 + 30_000)
+
+    // Simulate process closing after timeout
+    fakeProc._emit("close", 143)
+    await promise
+
+    expect(emit).toHaveBeenCalledWith({
+      type: "task.failed",
+      taskId,
+      rootCause: "timeout",
+    })
   })
 
   it("sends SIGKILL after 5s if SIGTERM did not kill the process", async () => {

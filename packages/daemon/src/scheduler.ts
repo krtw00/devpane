@@ -271,7 +271,7 @@ export async function executeTask(task: Task): Promise<void> {
     for (let testerAttempt = 0; testerAttempt <= GATE2_MAX_RETRIES; testerAttempt++) {
       console.log(`[scheduler] running tester for task ${task.id}${testerAttempt > 0 ? ` (retry ${testerAttempt})` : ""}`)
       appendLog(task.id, "tester", `[start] tester attempt ${testerAttempt + 1}`)
-      const testerResult = await runTester(spec, worktreePath)
+      const testerResult = await runTester(spec, worktreePath, task.id)
       testFiles = testerResult.testFiles
 
       if (testerResult.exit_code !== 0) {
