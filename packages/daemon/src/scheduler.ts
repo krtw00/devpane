@@ -275,6 +275,17 @@ export async function executeTask(task: Task): Promise<void> {
       const testerResult = await runTester(spec, worktreePath, task.id)
       testFiles = testerResult.testFiles
 
+      if (testerResult.timedOut) {
+        console.error(`[scheduler] tester timed out for task ${task.id}, skipping worker`)
+        appendLog(task.id, "tester", `[timeout] tester timed out, skipping worker`)
+        finishTask(task.id, "failed", JSON.stringify({ error: "tester_timeout" }))
+        emit({ type: "task.failed", taskId: task.id, rootCause: "timeout" })
+        broadcast("task:updated", { id: task.id, status: "failed" })
+        removeWorktree(task.id)
+        resetWorkerState()
+        return
+      }
+
       if (testerResult.exit_code !== 0) {
         console.warn(`[scheduler] tester exited with code ${testerResult.exit_code} for task ${task.id}`)
         appendLog(task.id, "tester", `[warn] exit_code=${testerResult.exit_code}`)

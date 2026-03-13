@@ -8,6 +8,7 @@ import { emit } from "./events.js"
 export type TesterResult = {
   testFiles: string[]
   exit_code: number
+  timedOut: boolean
 }
 
 const activeProcs = new Set<ChildProcess>()
@@ -249,6 +250,7 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
       resolve({
         testFiles,
         exit_code: code ?? 1,
+        timedOut,
       })
     })
 
