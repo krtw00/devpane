@@ -156,8 +156,9 @@ export function pruneWorktrees(): void {
 export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; deleted: string[] } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {
-    const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", "HEAD~1"], { cwd: path, encoding: "utf-8" }).trim()
-    const deleted = execFileSync("git", ["diff", "--diff-filter=D", "--name-only", "HEAD~1"], { cwd: path, encoding: "utf-8" }).trim()
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", "main"], { cwd: path, encoding: "utf-8" }).trim()
+    const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
+    const deleted = execFileSync("git", ["diff", "--diff-filter=D", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     return {
       added: added ? added.split("\n") : [],
       deleted: deleted ? deleted.split("\n") : [],
@@ -194,10 +195,11 @@ export function countOpenPrs(): number {
 export function getWorktreeDiff(taskId: string): { filesChanged: string[]; additions: number; deletions: number } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {
-    const nameOnly = execFileSync("git", ["diff", "--name-only", "HEAD~1"], { cwd: path, encoding: "utf-8" }).trim()
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", "main"], { cwd: path, encoding: "utf-8" }).trim()
+    const nameOnly = execFileSync("git", ["diff", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     const filesChanged = nameOnly ? nameOnly.split("\n") : []
 
-    const stat = execFileSync("git", ["diff", "--stat", "HEAD~1"], { cwd: path, encoding: "utf-8" }).trim()
+    const stat = execFileSync("git", ["diff", "--stat", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     let additions = 0
     let deletions = 0
     const match = stat.match(/(\d+) insertions?\(\+\)/)
