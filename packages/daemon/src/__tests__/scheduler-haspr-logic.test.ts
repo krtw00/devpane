@@ -216,8 +216,8 @@ describe("hasPr判定: removeWorktreeのkeepBranch引数", () => {
     await executeTask(task)
 
     expect(mockCreatePullRequest).toHaveBeenCalled()
-    // PR作成成功時はkeepBranch=trueでブランチを保持すべき
-    expect(mockRemoveWorktree).toHaveBeenCalledWith(task.id, true)
+    // auto-merge成功時はブランチ不要（keepBranch=false）
+    expect(mockRemoveWorktree).toHaveBeenCalledWith(task.id, false)
   })
 
   it("gate3=go, commit_hashなし(PR作成スキップ) → removeWorktree(keepBranch=false)", async () => {

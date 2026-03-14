@@ -331,6 +331,7 @@ export async function executeTask(task: Task): Promise<void> {
     const gate3 = runGate3(task.id, facts)
 
     let prUrl: string | null = null
+    let prMerged = false
 
     if (gate3.verdict === "kill") {
       console.log(`[scheduler] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
@@ -381,11 +382,12 @@ export async function executeTask(task: Task): Promise<void> {
           appendLog(task.id, "system", `[pr] ${prUrl}`)
           emit({ type: "pr.created", taskId: task.id, url: prUrl })
 
-          // Gate3通過済みなので自動マージ → mainを最新化
+          // Gate3通過済みなので自動マージ → baseブランチを最新化
           const merged = autoMergePr(task.id)
           if (merged) {
             console.log(`[scheduler] auto-merged PR for task ${task.id}`)
             appendLog(task.id, "system", `[auto-merge] done`)
+            prMerged = true
             pullMain()
           } else {
             console.warn(`[scheduler] auto-merge failed for task ${task.id}, PR remains open`)
@@ -431,11 +433,11 @@ export async function executeTask(task: Task): Promise<void> {
       circuitBreaker.recordSuccess()
     }
 
-    // Cleanup worktree (keep branch if PR was created)
-    const hasPr = !!prUrl
+    // Cleanup worktree (keep branch only if PR exists but not yet merged)
+    const keepBranch = !!prUrl && !prMerged
     try {
-      removeWorktree(task.id, !!hasPr)
-      console.log(`[scheduler] cleaned up worktree for task ${task.id}${hasPr ? " (branch kept for PR)" : ""}`)
+      removeWorktree(task.id, keepBranch)
+      console.log(`[scheduler] cleaned up worktree for task ${task.id}${keepBranch ? " (branch kept for PR)" : ""}`)
     } catch (cleanupErr) {
       const cleanupMsg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
       console.warn(`[scheduler] worktree cleanup failed for ${task.id}: ${cleanupMsg}`)
