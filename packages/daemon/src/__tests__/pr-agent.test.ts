@@ -94,26 +94,26 @@ describe("assessRisk", () => {
   it("returns not_recommended when tests fail", () => {
     const report = assessRisk(makePr({ testStatus: "fail" }))
     expect(report.risk).toBe("not_recommended")
-    expect(report.reason).toMatch(/テスト失敗/)
+    expect(report.reason).toMatch(/tests failed/)
   })
 
   it("returns needs_review when tests pass but diff >= 300", () => {
     const report = assessRisk(makePr({ testStatus: "pass", additions: 200, deletions: 150 }))
     expect(report.risk).toBe("needs_review")
-    expect(report.reason).toMatch(/diff大/)
+    expect(report.reason).toMatch(/large diff/)
   })
 
   it("returns needs_review when test status is unknown", () => {
     const report = assessRisk(makePr({ testStatus: "unknown", additions: 10, deletions: 5 }))
     expect(report.risk).toBe("needs_review")
-    expect(report.reason).toMatch(/テスト結果不明/)
+    expect(report.reason).toMatch(/test status unknown/)
   })
 
   it("returns needs_review with both reasons when unknown + large diff", () => {
     const report = assessRisk(makePr({ testStatus: "unknown", additions: 200, deletions: 200 }))
     expect(report.risk).toBe("needs_review")
-    expect(report.reason).toMatch(/テスト結果不明/)
-    expect(report.reason).toMatch(/diff大/)
+    expect(report.reason).toMatch(/test status unknown/)
+    expect(report.reason).toMatch(/large diff/)
   })
 })
 
@@ -133,7 +133,7 @@ describe("assessRisk with PR_RISK_DIFF_THRESHOLD", () => {
     const report = assessRisk(makePr({ testStatus: "pass", additions: 60, deletions: 50 }))
     // diffSize=110 >= threshold=100 → needs_review
     expect(report.risk).toBe("needs_review")
-    expect(report.reason).toMatch(/diff大/)
+    expect(report.reason).toMatch(/large diff/)
   })
 
   it("returns recommended when diff is below custom threshold", () => {

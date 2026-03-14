@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import type { ObservableFacts } from "@devpane/shared"
 import { getWorktreeDiff, commitWorktree } from "./worktree.js"
 import { appendLog } from "./db.js"
+import { config, parseCmd } from "./config.js"
 
 export function collectFacts(
   taskId: string,
@@ -18,7 +19,8 @@ export function collectFacts(
   // Build first (required for monorepo — dist/ doesn't exist in worktree)
   let buildFailed = false
   try {
-    execFileSync("pnpm", ["build"], {
+    const build = parseCmd(config.BUILD_CMD)
+    execFileSync(build.bin, build.args, {
       cwd: worktreePath,
       encoding: "utf-8",
       timeout: 120000,
@@ -27,13 +29,14 @@ export function collectFacts(
     buildFailed = true
     const buildErr = e as { stderr?: string; message?: string }
     const detail = buildErr.stderr || buildErr.message || "unknown build error"
-    appendLog(taskId, "build", `[error] pnpm build failed: ${detail}`)
+    appendLog(taskId, "build", `[error] ${config.BUILD_CMD} failed: ${detail}`)
   }
 
   // Run tests if available
   let testResult: ObservableFacts["test_result"]
   try {
-    const result = execFileSync("pnpm", ["test"], {
+    const test = parseCmd(config.TEST_CMD)
+    const result = execFileSync(test.bin, test.args, {
       cwd: worktreePath,
       encoding: "utf-8",
       timeout: 120000,
@@ -64,7 +67,8 @@ export function collectFacts(
   // Run lint if available
   let lintResult: ObservableFacts["lint_result"]
   try {
-    const result = execFileSync("pnpm", ["--if-present", "run", "lint"], {
+    const lint = parseCmd(config.LINT_CMD)
+    const result = execFileSync(lint.bin, lint.args, {
       cwd: worktreePath,
       encoding: "utf-8",
       timeout: 60000,
@@ -95,7 +99,7 @@ export function collectFacts(
     diff_stats: { additions, deletions },
     test_result: testResult,
     lint_result: lintResult,
-    branch: `devpane/task-${taskId}`,
+    branch: `${config.BRANCH_PREFIX}/task-${taskId}`,
     commit_hash: commitHash,
   }
 }

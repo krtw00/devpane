@@ -11,7 +11,7 @@ function git(...args: string[]): string {
 
 export function createWorktree(taskId: string): string {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
-  const branch = `devpane/task-${taskId}`
+  const branch = `${config.BRANCH_PREFIX}/task-${taskId}`
 
   // If worktree already exists, reuse it
   if (existsSync(path)) {
@@ -36,7 +36,7 @@ export function removeWorktree(taskId: string, keepBranch = false): void {
     git("worktree", "remove", path, "--force")
   }
   if (!keepBranch) {
-    const branch = `devpane/task-${taskId}`
+    const branch = `${config.BRANCH_PREFIX}/task-${taskId}`
     try {
       git("branch", "-D", branch)
     } catch {
@@ -66,7 +66,7 @@ export function commitWorktree(taskId: string, title: string): string | null {
 }
 
 export function createPullRequest(taskId: string, title: string, facts: { files_changed: string[]; diff_stats: { additions: number; deletions: number } }): string | null {
-  const branch = `devpane/task-${taskId}`
+  const branch = `${config.BRANCH_PREFIX}/task-${taskId}`
 
   // Push branch to origin
   try {
@@ -106,11 +106,11 @@ export function createPullRequest(taskId: string, title: string, facts: { files_
 }
 
 export function autoMergePr(taskId: string): boolean {
-  const branch = `devpane/task-${taskId}`
+  const branch = `${config.BRANCH_PREFIX}/task-${taskId}`
   try {
     execFileSync("gh", [
       "pr", "merge", branch,
-      "--merge",
+      config.PR_MERGE_STRATEGY,
     ], { cwd: config.PROJECT_ROOT, encoding: "utf-8", timeout: 30000 })
     return true
   } catch (err) {
@@ -153,7 +153,7 @@ export function pruneWorktrees(): void {
 
   // devpane/ プレフィックスの孤立ブランチを掃除
   try {
-    const branches = git("branch", "--list", "devpane/*").split("\n").map(b => b.trim()).filter(Boolean)
+    const branches = git("branch", "--list", `${config.BRANCH_PREFIX}/*`).split("\n").map(b => b.trim()).filter(Boolean)
     for (const branch of branches) {
       if (hasOpenPr(branch)) {
         console.log(`[worktree] skipping branch with open PR: ${branch}`)

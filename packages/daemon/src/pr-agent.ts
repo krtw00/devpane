@@ -22,9 +22,9 @@ export type PrReport = {
 }
 
 const RISK_LABELS: Record<RiskLevel, string> = {
-  recommended: "✅ マージ推奨",
-  needs_review: "⚠️ 要確認",
-  not_recommended: "❌ 非推奨",
+  recommended: "✅ Recommended",
+  needs_review: "⚠️ Needs Review",
+  not_recommended: "❌ Not Recommended",
 }
 
 export function parseGhPrList(json: string): PrInfo[] {
@@ -39,7 +39,7 @@ export function parseGhPrList(json: string): PrInfo[] {
   }> = JSON.parse(json)
 
   return raw
-    .filter((pr) => pr.headRefName.startsWith("devpane/task-"))
+    .filter((pr) => pr.headRefName.startsWith(`${config.BRANCH_PREFIX}/task-`))
     .map((pr) => {
       let testStatus: PrInfo["testStatus"] = "unknown"
       if (pr.statusCheckRollup && pr.statusCheckRollup.length > 0) {
@@ -66,31 +66,31 @@ export function assessRisk(pr: PrInfo): PrReport {
   const diffSize = pr.additions + pr.deletions
 
   if (pr.testStatus === "fail") {
-    return { pr, diffSize, risk: "not_recommended", reason: "テスト失敗" }
+    return { pr, diffSize, risk: "not_recommended", reason: "tests failed" }
   }
 
   if (pr.testStatus === "pass" && diffSize < config.PR_RISK_DIFF_THRESHOLD) {
-    return { pr, diffSize, risk: "recommended", reason: "テスト通過 & diff小" }
+    return { pr, diffSize, risk: "recommended", reason: "tests pass & small diff" }
   }
 
   const reasons: string[] = []
-  if (pr.testStatus === "unknown") reasons.push("テスト結果不明")
-  if (diffSize >= config.PR_RISK_DIFF_THRESHOLD) reasons.push(`diff大 (${diffSize}行)`)
+  if (pr.testStatus === "unknown") reasons.push("test status unknown")
+  if (diffSize >= config.PR_RISK_DIFF_THRESHOLD) reasons.push(`large diff (${diffSize} lines)`)
 
   return { pr, diffSize, risk: "needs_review", reason: reasons.join(", ") }
 }
 
 function formatReport(reports: PrReport[]): string {
   if (reports.length === 0) {
-    return "📋 **PR日次レポート**\n未マージの`devpane/task-*` PRはありません。"
+    return `📋 **PR Daily Report**\nNo unmerged \`${config.BRANCH_PREFIX}/task-*\` PRs.`
   }
 
   const lines = [
-    "📋 **PR日次レポート**",
-    `対象PR: ${reports.length}件`,
+    "📋 **PR Daily Report**",
+    `PRs: ${reports.length}`,
     "",
     "```",
-    "PR#  | Diff  | テスト | 判定       | タイトル",
+    "PR#  | Diff  | Tests  | Risk       | Title",
     "-----|-------|--------|------------|--------",
   ]
 
@@ -110,7 +110,7 @@ function formatReport(reports: PrReport[]): string {
   const notRecommended = reports.filter((r) => r.risk === "not_recommended").length
 
   lines.push("")
-  lines.push(`推奨: ${recommended} / 要確認: ${needsReview} / 非推奨: ${notRecommended}`)
+  lines.push(`Recommended: ${recommended} / Needs Review: ${needsReview} / Not Recommended: ${notRecommended}`)
 
   return lines.join("\n")
 }

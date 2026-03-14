@@ -119,4 +119,12 @@ export type Config = {
   KAIZEN_THRESHOLD: number
   MEMORY_CLEANUP_THRESHOLD: number
   BASE_BRANCH: string
+  BUILD_CMD: string
+  TEST_CMD: string
+  LINT_CMD: string
+  BRANCH_PREFIX: string
+  TEST_DIR: string
+  TEST_FILE_PATTERN: string
+  TEST_FRAMEWORK: string
+  PR_MERGE_STRATEGY: string
 }

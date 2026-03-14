@@ -43,7 +43,7 @@ function summarizeFacts(resultJson: string | null): string {
 }
 
 function formatMemories(memories: Memory[]): string[] {
-  if (memories.length === 0) return ["（記憶なし — 初回起動）"]
+  if (memories.length === 0) return ["(no memories — first run)"]
 
   const grouped = new Map<string, Memory[]>()
   for (const m of memories) {
@@ -53,9 +53,9 @@ function formatMemories(memories: Memory[]): string[] {
   }
 
   const labels: Record<string, string> = {
-    feature: "実装済み機能",
-    decision: "アーキテクチャ判断",
-    lesson: "学んだ教訓",
+    feature: "Implemented Features",
+    decision: "Architecture Decisions",
+    lesson: "Lessons Learned",
   }
 
   const lines: string[] = []
@@ -70,46 +70,46 @@ function formatMemories(memories: Memory[]): string[] {
 
 function buildPmPrompt(context: PmContext): string {
   return [
-    "## プロジェクト定義",
+    "## Project Definition",
     context.claudeMd,
     context.readme ? `\n## README\n${context.readme}` : "",
-    context.vision ? `\n## 設計方針（参考: 全文を実装するのではなく、現在の課題に関連する部分だけを参照せよ）\n${context.vision}` : "",
+    context.vision ? `\n## Design Vision (reference only — do not implement everything, focus on what is relevant to current issues)\n${context.vision}` : "",
     "",
-    "## 直近の完了タスク（最新5件）",
+    "## Recent Completed Tasks (latest 5)",
     context.recentDone.length > 0
       ? context.recentDone.map(t => `- [done] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
-      : "（なし）",
+      : "(none)",
     "",
-    "## 全完了タスク一覧（重複生成禁止）",
+    "## All Completed Tasks (DO NOT generate duplicates)",
     context.allDoneTitles.length > 0
       ? context.allDoneTitles.map(t => `- ${t}`).join("\n")
-      : "（なし）",
+      : "(none)",
     "",
-    "## 失敗タスク（未解決）",
+    "## Failed Tasks (unresolved)",
     context.failedTasks.length > 0
       ? context.failedTasks.map(t => `- [failed] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
-      : "（なし）",
+      : "(none)",
     "",
-    "## 現在のキュー",
+    "## Current Queue",
     context.pendingTasks.length > 0
       ? context.pendingTasks.map(t => `- [pending] ${t.title}`).join("\n")
-      : "（なし）",
+      : "(none)",
     "",
-    "## プロジェクト記憶",
+    "## Project Memory",
     ...formatMemories(context.memories),
     "",
-    "上記を踏まえ、次に実装すべきタスクを優先度順に生成せよ。",
+    "Based on the above, generate the next tasks to implement in priority order.",
     "",
-    "【タスク生成ルール（厳守）】",
-    "1. 重複禁止: 「全完了タスク一覧」「現在のキュー」「プロジェクト記憶の実装済み機能」に含まれる機能と同一・類似のタスクは絶対に生成しないこと。タイトルが異なっても機能的に同じものは重複。違反は自動却下される。",
-    "2. スコープ制限: 新機能の大量追加ではなく、既存機能の改善・バグ修正・テスト強化・安定性向上を優先せよ。vision.mdの未実装機能を網羅的に実装しようとしないこと。",
-    "3. 実装可能性: 各タスクのdescriptionは、Workerが単独で実装できる具体的な指示にすること。変更対象ファイル、期待する動作、テスト方針を含めること。",
-    "4. 粒度: 1タスク = 1PR = 差分300行以下を目安とせよ。大きなタスクは分割せよ。",
-    "5. 最大3タスクまで生成せよ。",
+    "【Task Generation Rules (STRICT)】",
+    "1. No duplicates: Do NOT generate tasks identical or similar to those in 'All Completed Tasks', 'Current Queue', or 'Implemented Features' in memory. Different title but same functionality = duplicate. Violations are auto-rejected.",
+    "2. Scope: Prioritize improvements, bug fixes, test coverage, and stability over adding new features. Do NOT try to implement all unfinished features from vision.md.",
+    `3. Implementability: Each task description must be specific enough for a Worker to implement independently. Include target files, expected behavior, and test plan. Max diff size: ${config.MAX_DIFF_SIZE} lines.`,
+    "4. Granularity: 1 task = 1 PR. Split large tasks.",
+    "5. Generate at most 3 tasks.",
     "",
-    "既に実装済みの機能を壊したり削除するタスクは生成しないこと。",
+    "Do NOT generate tasks that would break or remove already implemented features.",
     "",
-    "以下のJSON形式のみで回答せよ（説明文は不要）:",
+    "Respond with ONLY the following JSON format (no explanation):",
     '{"tasks": [{"title": "...", "description": "...", "priority": 1}], "reasoning": "..."}',
   ].join("\n")
 }
@@ -147,7 +147,7 @@ export function parsePmOutput(stdout: string): PmOutput {
 
 export async function runPm(): Promise<PmOutput> {
   const context: PmContext = {
-    claudeMd: readFileOr(join(config.PROJECT_ROOT, "CLAUDE.md"), "（CLAUDE.mdなし）"),
+    claudeMd: readFileOr(join(config.PROJECT_ROOT, "CLAUDE.md"), "(no CLAUDE.md)"),
     readme: readFileOr(join(config.PROJECT_ROOT, "README.md"), ""),
     vision: readFileOr(join(config.PROJECT_ROOT, "docs", "vision.md"), ""),
     recentDone: getRecentDone(5),

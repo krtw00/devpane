@@ -23,39 +23,44 @@ export function killAllTesters(): void {
 export function buildTesterPrompt(spec: PmOutput): string {
   const taskDescriptions = spec.tasks
     .map((t, i) => {
-      const lines = [`### タスク${i + 1}: ${t.title}\n${t.description}`]
+      const lines = [`### Task ${i + 1}: ${t.title}\n${t.description}`]
       if (t.constraints && t.constraints.length > 0) {
-        lines.push(`\n**制約条件:**\n${t.constraints.map(c => `- ${c}`).join("\n")}`)
+        lines.push(`\n**Constraints:**\n${t.constraints.map(c => `- ${c}`).join("\n")}`)
       }
       return lines.join("")
     })
     .join("\n\n")
 
   return [
-    "以下の構造化仕様に基づき、テストコードを生成せよ。",
+    "Generate test code based on the following structured specification.",
     "",
-    "## 仕様",
+    "## Specification",
     taskDescriptions,
     "",
-    `## 設計意図\n${spec.reasoning}`,
+    `## Design Intent\n${spec.reasoning}`,
     "",
-    "## テスト生成ルール",
-    "- 各タスクのtitle/descriptionから、実装が満たすべきテストケースを導出せよ",
-    "- テストファイルは `src/__tests__/` ディレクトリに配置すること",
-    "- テストフレームワークは vitest を使用",
-    "- テストは実装前に書く（TDD的アプローチ）ため、現時点で失敗しても構わない",
-    "- ファイル名は `*.test.ts` とすること",
-    "- 既存のテストファイルを壊さないこと",
+    "## Test Generation Rules",
+    "- Derive test cases from each task's title/description that the implementation must satisfy",
+    `- Place test files in the \`${config.TEST_DIR}/\` directory`,
+    `- Use ${config.TEST_FRAMEWORK} as the test framework`,
+    "- Tests are written before implementation (TDD approach), so they may fail at this point",
+    `- Name test files as \`${config.TEST_FILE_PATTERN}\``,
+    "- Do NOT break existing test files",
     "",
-    "## 品質要件（必須）",
-    "- `pnpm build` が通ること（型エラーなし）",
-    "- lint警告を残さないこと（未使用import、未使用変数など）",
-    "- 新規ファイルは既存コードのスタイルに従うこと",
+    "## Quality Requirements (mandatory)",
+    `- \`${config.BUILD_CMD}\` must pass (no type errors)`,
+    "- No lint warnings (unused imports, unused variables, etc.)",
+    "- New files must follow the existing code style",
   ].join("\n")
 }
 
+function testFileSuffix(): string {
+  // "*.test.ts" → ".test.ts"
+  return config.TEST_FILE_PATTERN.replace(/^\*/, "")
+}
+
 function addTestFile(testFiles: string[], filePath: string): void {
-  if (filePath.endsWith(".test.ts") && !testFiles.includes(filePath)) {
+  if (filePath.endsWith(testFileSuffix()) && !testFiles.includes(filePath)) {
     testFiles.push(filePath)
   }
 }
@@ -110,7 +115,7 @@ export function parseTesterOutput(stdout: string): string[] {
 
       // Capture from result text
       if (event.type === "result" && event.result) {
-        const matches = event.result.match(/[\w/.-]+\.test\.ts/g)
+        const matches = event.result.match(new RegExp(`[\\w/.-]+${testFileSuffix().replace(/\./g, "\\.")}`, "g"))
         if (matches) {
           for (const m of matches) {
             addTestFile(testFiles, m)
@@ -119,7 +124,7 @@ export function parseTesterOutput(stdout: string): string[] {
       }
     } catch {
       // Non-JSON line, check for test file paths
-      const matches = line.match(/[\w/.-]+\.test\.ts/g)
+      const matches = line.match(new RegExp(`[\\w/.-]+${testFileSuffix().replace(/\./g, "\\.")}`, "g"))
       if (matches) {
         for (const m of matches) {
           addTestFile(testFiles, m)
@@ -202,7 +207,7 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
         }
 
         if (event.type === "result" && event.result) {
-          const matches = event.result.match(/[\w/.-]+\.test\.ts/g)
+          const matches = event.result.match(new RegExp(`[\\w/.-]+${testFileSuffix().replace(/\./g, "\\.")}`, "g"))
           if (matches) {
             for (const m of matches) {
               addTestFile(testFiles, m)

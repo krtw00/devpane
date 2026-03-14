@@ -33,6 +33,19 @@ export const config: Config = {
   KAIZEN_THRESHOLD: Number(env("DEVPANE_KAIZEN_THRESHOLD", "10")),
   MEMORY_CLEANUP_THRESHOLD: Number(env("DEVPANE_MEMORY_CLEANUP_THRESHOLD", "10")),
   BASE_BRANCH: env("DEVPANE_BASE_BRANCH", "main"),
+  BUILD_CMD: env("DEVPANE_BUILD_CMD", "pnpm build"),
+  TEST_CMD: env("DEVPANE_TEST_CMD", "pnpm test"),
+  LINT_CMD: env("DEVPANE_LINT_CMD", "pnpm --if-present run lint"),
+  BRANCH_PREFIX: env("DEVPANE_BRANCH_PREFIX", "devpane"),
+  TEST_DIR: env("DEVPANE_TEST_DIR", "src/__tests__"),
+  TEST_FILE_PATTERN: env("DEVPANE_TEST_FILE_PATTERN", "*.test.ts"),
+  TEST_FRAMEWORK: env("DEVPANE_TEST_FRAMEWORK", "vitest"),
+  PR_MERGE_STRATEGY: env("DEVPANE_PR_MERGE_STRATEGY", "--merge"),
+}
+
+export function parseCmd(cmd: string): { bin: string; args: string[] } {
+  const parts = cmd.split(/\s+/)
+  return { bin: parts[0], args: parts.slice(1) }
 }
 
 function parseActiveHours(value: string | undefined): ActiveHours | null {
