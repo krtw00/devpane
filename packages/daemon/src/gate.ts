@@ -78,6 +78,7 @@ export function runGate3(taskId: string, facts: ObservableFacts): Gate3Result {
 }
 
 function classifyRootCause(facts: ObservableFacts, reasons: string[]): RootCauseType {
+  if (facts.test_result?.timed_out) return "env_issue"
   if (facts.test_result?.failed && facts.test_result.failed > 0) return "test_gap"
   if (facts.lint_result?.errors && facts.lint_result.errors > 0) return "scope_creep"
   const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions

@@ -195,7 +195,7 @@ export function pullMain(): void {
   }
 }
 
-export function countOpenPrs(): number {
+export function countOpenPrs(): number | null {
   try {
     const result = execFileSync("gh", ["pr", "list", "--state", "open", "--json", "number"], {
       cwd: config.PROJECT_ROOT,
@@ -206,7 +206,7 @@ export function countOpenPrs(): number {
     return Array.isArray(prs) ? prs.length : 0
   } catch (err) {
     console.warn('[worktree] countOpenPrs failed:', err)
-    return 0
+    return null
   }
 }
 

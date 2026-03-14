@@ -82,7 +82,7 @@ describe("collectFacts", () => {
     expect(facts.test_result!.exit_code).toBe(1)
   })
 
-  it("returns default lintResult when lint throws unexpected error (no status)", async () => {
+  it("returns undefined lintResult when lint throws unexpected error (no status)", async () => {
     const cp = await import("node:child_process")
     const mock = vi.mocked(cp.execFileSync)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -94,8 +94,6 @@ describe("collectFacts", () => {
     }) as any)
 
     const facts = collectFacts("task-006", "Lint crash", "/tmp/worktree", 0)
-    expect(facts.lint_result).toBeDefined()
-    expect(facts.lint_result!.errors).toBeGreaterThanOrEqual(1)
-    expect(facts.lint_result!.exit_code).toBe(1)
+    expect(facts.lint_result).toBeUndefined()
   })
 })

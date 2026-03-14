@@ -73,6 +73,7 @@ let paused = false
 let rateLimitHits = 0
 let pmConsecutiveFailures = 0
 let currentTaskPromise: Promise<void> | null = null
+let lastPruneAt = 0
 
 // --- Agent state tracking for Shogun UI ---
 export type AgentStatus = "idle" | "running"
@@ -130,6 +131,8 @@ export function getSchedulerState() {
 /** @internal テスト用 */
 export function resetPmConsecutiveFailures(): void {
   pmConsecutiveFailures = 0
+  alive = true
+  paused = false
 }
 
 /** @internal テスト用 */
@@ -197,9 +200,9 @@ async function callPm(): Promise<Task[]> {
     if (pmConsecutiveFailures % 3 === 0) {
       const backoffSec = calculatePmBackoff(pmConsecutiveFailures)
       console.error(`[scheduler] PM failed ${pmConsecutiveFailures}x, cooling down ${backoffSec}s`)
-      await sleep(backoffSec * 1000)
+      for (let i = 0; i < backoffSec && alive && !paused; i++) await sleep(1000)
     } else {
-      await sleep(config.PM_RETRY_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.PM_RETRY_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
     }
     return []
   }
@@ -248,7 +251,6 @@ export async function executeTask(task: Task): Promise<void> {
   const workerId = "worker-0"
   console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
   startTask(task.id, workerId)
-  emit({ type: "task.started", taskId: task.id, workerId })
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
   let worktreePath: string
@@ -356,7 +358,6 @@ export async function executeTask(task: Task): Promise<void> {
         console.log(`[scheduler] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         requeueTask(task.id)
         appendLog(task.id, "system", `[gate3] recycled (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
-        emit({ type: "task.started", taskId: task.id, workerId: "requeued" })
         broadcast("task:updated", { id: task.id, status: "pending" })
       } else {
         console.log(`[scheduler] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
@@ -367,6 +368,7 @@ export async function executeTask(task: Task): Promise<void> {
       }
     } else {
       // Gate 3 passed → PR作成
+      emit({ type: "task.started", taskId: task.id, workerId })
       emit({ type: "gate.passed", taskId: task.id, gate: "gate3" })
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
@@ -530,7 +532,12 @@ export function recoverOrphanTasks(): void {
 export async function startScheduler(): Promise<void> {
   console.log("[scheduler] starting autonomous loop")
   alive = true
-  pruneWorktrees()
+  try {
+    pruneWorktrees()
+  } catch (err) {
+    console.error(`[scheduler] initial prune failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  lastPruneAt = Date.now()
   recoverOrphanTasks()
 
   // Initialize shift tracking
@@ -556,19 +563,34 @@ export async function startScheduler(): Promise<void> {
       continue
     }
 
+    // Periodic prune: 一定時間経過でworktree/branch掃除
+    if (Date.now() - lastPruneAt >= config.PRUNE_INTERVAL_HOURS * 60 * 60 * 1000) {
+      try {
+        pruneWorktrees()
+      } catch (err) {
+        console.error(`[scheduler] periodic prune failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      lastPruneAt = Date.now()
+    }
+
     // Active Hours: 稼働時間外ならタスク実行をスキップ
     if (!isWithinActiveHours(config.ACTIVE_HOURS)) {
       emit({ type: "scheduler.outside_hours" })
       console.log(`[scheduler] outside active hours, idling ${config.IDLE_INTERVAL_SEC}s`)
-      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
 
     // WIP制限: 直列実行（WIP=1）— PRマージ後にmain pullしてから次タスク
     const openPrs = countOpenPrs()
+    if (openPrs === null) {
+      console.warn(`[scheduler] countOpenPrs failed, skipping task start for safety`)
+      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      continue
+    }
     if (openPrs >= config.MAX_OPEN_PRS) {
       console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${config.MAX_OPEN_PRS}), waiting...`)
-      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
     // PRがなくなった = マージされた → mainを最新化してコンフリクト防止
@@ -584,7 +606,7 @@ export async function startScheduler(): Promise<void> {
 
       if (created.length === 0) {
         console.log(`[scheduler] PM returned no tasks, idling ${config.IDLE_INTERVAL_SEC}s`)
-        await sleep(config.IDLE_INTERVAL_SEC * 1000)
+        for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
         continue
       }
 

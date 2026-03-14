@@ -60,7 +60,7 @@ describe("silent error logging", () => {
 
       const result = countOpenPrs()
 
-      expect(result).toBe(0)
+      expect(result).toBe(null)
       expect(warnSpy).toHaveBeenCalledWith("[worktree] countOpenPrs failed:", ghError)
     })
   })
