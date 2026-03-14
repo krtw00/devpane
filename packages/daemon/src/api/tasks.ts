@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { getAllTasks, getTask, getTaskLogs, createTask } from "../db.js"
+import { getAllTasks, getTask, getTaskLogs, createTask, revertToPending } from "../db.js"
 
 export const tasksApi = new Hono()
 
@@ -17,6 +17,14 @@ tasksApi.get("/:id", (c) => {
 tasksApi.get("/:id/logs", (c) => {
   const logs = getTaskLogs(c.req.param("id"))
   return c.json(logs)
+})
+
+tasksApi.post("/:id/retry", (c) => {
+  const task = getTask(c.req.param("id"))
+  if (!task) return c.json({ error: "not found" }, 404)
+  if (task.status !== "failed") return c.json({ error: "only failed tasks can be retried" }, 400)
+  revertToPending(task.id)
+  return c.json({ ok: true })
 })
 
 tasksApi.post("/", async (c) => {

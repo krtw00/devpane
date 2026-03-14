@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useTaskDetail, fetchEvents, type AgentEvent } from '../composables/useApi'
+import { useTaskDetail, fetchEvents, retryTask, type AgentEvent } from '../composables/useApi'
 import { ref } from 'vue'
 
 const props = defineProps<{ id: string }>()
@@ -26,6 +26,13 @@ async function loadPrUrl() {
   } catch {}
 }
 
+const retrying = ref(false)
+async function doRetry() {
+  if (!task.value || retrying.value) return
+  retrying.value = true
+  try { await retryTask(props.id); await refresh() } finally { retrying.value = false }
+}
+
 const facts = computed(() => {
   if (!task.value?.result) return null
   try {
@@ -47,6 +54,7 @@ const facts = computed(() => {
         <span>作成: {{ task.created_by }}</span>
         <span v-if="task.assigned_to">担当: {{ task.assigned_to }}</span>
         <a v-if="prUrl" :href="prUrl" target="_blank" class="pr-link">PR →</a>
+        <button v-if="task.status === 'failed'" class="retry-btn" @click="doRetry" :disabled="retrying">{{ retrying ? '再キュー中...' : '🔄 リトライ' }}</button>
       </div>
 
       <section class="description">
@@ -163,6 +171,14 @@ h2 {
   padding: 0.1rem 0.4rem; border: 1px solid #58a6ff40; border-radius: 3px;
 }
 .pr-link:hover { background: #58a6ff15; }
+
+.retry-btn {
+  font-family: inherit; font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  background: #21262d; color: #d29922; border: 1px solid #d2992240; border-radius: 3px;
+  cursor: pointer;
+}
+.retry-btn:hover { background: #d2992220; }
+.retry-btn:disabled { opacity: 0.4; cursor: default; }
 
 .description pre {
   background: #161b22;

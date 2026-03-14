@@ -184,10 +184,14 @@ async function send() {
           <h1>DevPane</h1>
           <span class="sub">autonomous dev team</span>
         </div>
-        <div class="stats-bar" v-if="pipeline">
-          <span class="stat">G3通過率: {{ Math.round((pipeline.gate3_pass_rate ?? 0) * 100) }}%</span>
-          <span class="stat">本日: {{ pipeline.tasks_today ?? 0 }}件</span>
-          <span class="stat fail" v-if="pipeline.consecutive_failures > 0">連続失敗: {{ pipeline.consecutive_failures }}</span>
+        <div class="stats-bar">
+          <template v-if="pipeline">
+            <span class="stat">G3通過率: {{ Math.round((pipeline.gate3_pass_rate ?? 0) * 100) }}%</span>
+            <span class="stat">本日: {{ pipeline.tasks_today ?? 0 }}件</span>
+            <span class="stat fail" v-if="pipeline.consecutive_failures > 0">連続失敗: {{ pipeline.consecutive_failures }}</span>
+          </template>
+          <span class="stat warn" v-if="scheduler?.rateLimitHits">RL: {{ scheduler.rateLimitHits }}回</span>
+          <span class="stat" v-if="scheduler?.activeHours">稼働: {{ scheduler.activeHours.start }}:00–{{ scheduler.activeHours.end }}:00</span>
         </div>
         <div class="spacer" />
         <router-link to="/tasks" class="nav-link">タスク管理</router-link>
@@ -203,7 +207,8 @@ async function send() {
     <!-- Pipeline Stage Bar -->
     <div v-if="scheduler?.worker.status === 'running'" class="pipeline-bar active">
       <div class="pipe-info">
-        <span class="pipe-title">{{ scheduler.worker.taskTitle }}</span>
+        <router-link v-if="scheduler.worker.taskId" :to="`/tasks/${scheduler.worker.taskId}`" class="pipe-title pipe-link">{{ scheduler.worker.taskTitle }}</router-link>
+        <span v-else class="pipe-title">{{ scheduler.worker.taskTitle }}</span>
         <span class="pipe-time">{{ elapsed(scheduler.worker.startedAt) }}</span>
       </div>
       <div class="stages">
@@ -305,6 +310,7 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
   padding: 0.1rem 0.4rem; background: #161b22; border-radius: 3px;
 }
 .stat.fail { color: #f85149; }
+.stat.warn { color: #d29922; }
 
 .spacer { flex: 1; }
 
@@ -337,7 +343,8 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
 }
 .pipeline-bar.active { border-color: #d29922; }
 .pipe-info { display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex: 1; }
-.pipe-title { color: #f0f6fc; font-weight: 600; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pipe-title { color: #f0f6fc; font-weight: 600; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+.pipe-link:hover { text-decoration: underline; color: #58a6ff; }
 .idle-title { color: #484f58; font-weight: normal; }
 .pipe-time { color: #d29922; font-size: 0.65rem; flex-shrink: 0; }
 .stages { display: flex; gap: 2px; flex-shrink: 0; }
