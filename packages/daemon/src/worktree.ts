@@ -153,7 +153,7 @@ export function pruneWorktrees(): void {
 
   // devpane/ プレフィックスの孤立ブランチを掃除
   try {
-    const branches = git("branch", "--list", `${config.BRANCH_PREFIX}/*`).split("\n").map(b => b.trim()).filter(Boolean)
+    const branches = git("branch", "--list", `${config.BRANCH_PREFIX}/*`).split("\n").map(b => b.replace(/^[*+]\s+/, "").trim()).filter(Boolean)
     for (const branch of branches) {
       if (hasOpenPr(branch)) {
         console.log(`[worktree] skipping branch with open PR: ${branch}`)
