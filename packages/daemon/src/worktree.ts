@@ -55,7 +55,7 @@ export function commitWorktree(taskId: string, title: string): string | null {
       execFileSync("git", ["commit", "-m", `task-${taskId}: ${title}`], { cwd: path, encoding: "utf-8" })
     }
     // Return HEAD hash whether we committed or Worker already did
-    const mainHash = execFileSync("git", ["rev-parse", "main"], { cwd: path, encoding: "utf-8" }).trim()
+    const mainHash = execFileSync("git", ["rev-parse", config.BASE_BRANCH], { cwd: path, encoding: "utf-8" }).trim()
     const headHash = execFileSync("git", ["rev-parse", "HEAD"], { cwd: path, encoding: "utf-8" }).trim()
     if (headHash === mainHash) return null // no new commits at all
     return headHash
@@ -93,7 +93,7 @@ export function createPullRequest(taskId: string, title: string, facts: { files_
   try {
     const prUrl = execFileSync("gh", [
       "pr", "create",
-      "--base", "main",
+      "--base", config.BASE_BRANCH,
       "--head", branch,
       "--title", `task-${taskId}: ${title}`,
       "--body", body,
@@ -174,7 +174,7 @@ export function pruneWorktrees(): void {
 export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; deleted: string[] } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {
-    const mergeBase = execFileSync("git", ["merge-base", "HEAD", "main"], { cwd: path, encoding: "utf-8" }).trim()
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", config.BASE_BRANCH], { cwd: path, encoding: "utf-8" }).trim()
     const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     const deleted = execFileSync("git", ["diff", "--diff-filter=D", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     return {
@@ -188,10 +188,10 @@ export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; del
 
 export function pullMain(): void {
   try {
-    git("pull", "--ff-only", "origin", "main")
-    console.log("[worktree] pulled latest main")
+    git("pull", "--ff-only", "origin", config.BASE_BRANCH)
+    console.log(`[worktree] pulled latest ${config.BASE_BRANCH}`)
   } catch (err) {
-    console.warn(`[worktree] pull main failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[worktree] pull ${config.BASE_BRANCH} failed: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -213,7 +213,7 @@ export function countOpenPrs(): number {
 export function getWorktreeDiff(taskId: string): { filesChanged: string[]; additions: number; deletions: number } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {
-    const mergeBase = execFileSync("git", ["merge-base", "HEAD", "main"], { cwd: path, encoding: "utf-8" }).trim()
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", config.BASE_BRANCH], { cwd: path, encoding: "utf-8" }).trim()
     const nameOnly = execFileSync("git", ["diff", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     const filesChanged = nameOnly ? nameOnly.split("\n") : []
 

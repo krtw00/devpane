@@ -32,6 +32,7 @@ export const config: Config = {
   EFFECT_MEASURE_THRESHOLD: Number(env("DEVPANE_EFFECT_MEASURE_THRESHOLD", "10")),
   KAIZEN_THRESHOLD: Number(env("DEVPANE_KAIZEN_THRESHOLD", "10")),
   MEMORY_CLEANUP_THRESHOLD: Number(env("DEVPANE_MEMORY_CLEANUP_THRESHOLD", "10")),
+  BASE_BRANCH: env("DEVPANE_BASE_BRANCH", "main"),
 }
 
 function parseActiveHours(value: string | undefined): ActiveHours | null {
