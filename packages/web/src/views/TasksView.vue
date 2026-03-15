@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useTasks, createTask, fetchMemories, deleteMemory, type Task, type Memory } from '../composables/useApi'
 import { onWsEvent } from '../composables/useSocket'
 
-const { tasks, loading, refresh } = useTasks()
+const { tasks, loading, error, refresh } = useTasks()
 
 // --- Page tabs ---
 const activeTab = ref<'tasks' | 'memory'>('tasks')
@@ -81,6 +81,8 @@ async function submitTask() {
         <router-link to="/" class="nav-link">← オフィスに戻る</router-link>
       </div>
     </header>
+
+    <div v-if="error" class="error-banner">API接続エラー: {{ error }}</div>
 
     <template v-if="activeTab === 'tasks'">
     <div class="toolbar">
@@ -217,6 +219,12 @@ header { margin-bottom: 1rem; }
 .s-running { border-left: 3px solid #d29922; }
 .s-failed { border-left: 3px solid #f85149; }
 .s-done { border-left: 3px solid #238636; }
+
+.error-banner {
+  background: #3d1214; color: #f85149; border: 1px solid #f8514930;
+  border-radius: 6px; padding: 0.4rem 0.75rem; margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+}
 
 .empty { text-align: center; color: #484f58; padding: 3rem 0; }
 

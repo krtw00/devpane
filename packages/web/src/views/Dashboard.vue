@@ -18,15 +18,22 @@ const pipeline = ref<PipelineStats | null>(null)
 
 const recentEvents = ref<AgentEvent[]>([])
 
+const apiError = ref<string | null>(null)
+
 const spcCost = ref<SpcMetricData | null>(null)
 const spcExecTime = ref<SpcMetricData | null>(null)
 const spcDiffSize = ref<SpcMetricData | null>(null)
 const improvements = ref<Improvement[]>([])
 
 async function refreshStatus() {
-  try { scheduler.value = await fetchSchedulerStatus() } catch {}
-  try { pipeline.value = await fetchPipelineStats() } catch {}
-  try { recentEvents.value = await fetchEvents(20) } catch {}
+  try {
+    scheduler.value = await fetchSchedulerStatus()
+    pipeline.value = await fetchPipelineStats()
+    recentEvents.value = await fetchEvents(20)
+    apiError.value = null
+  } catch (err) {
+    apiError.value = err instanceof Error ? err.message : String(err)
+  }
 }
 
 async function refreshSpc() {
@@ -213,6 +220,9 @@ async function send() {
 
 <template>
   <div class="office">
+    <!-- Error Banner -->
+    <div v-if="apiError" class="error-banner">API接続エラー: {{ apiError }}</div>
+
     <!-- Header -->
     <header>
       <div class="hdr">
@@ -368,6 +378,12 @@ async function send() {
   color: #c9d1d9; font-size: 13px;
   display: flex; flex-direction: column; height: 100vh;
   max-width: 1400px;
+}
+
+.error-banner {
+  background: #3d1214; color: #f85149; border: 1px solid #f8514930;
+  border-radius: 6px; padding: 0.4rem 0.75rem; margin-bottom: 0.5rem;
+  font-size: 0.75rem; flex-shrink: 0;
 }
 
 /* Header */
