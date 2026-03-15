@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, inject, onMounted, onUnmounted, nextTick, watch, type Ref } from 'vue'
 import {
   fetchSchedulerStatus, fetchPipelineStats, fetchEvents,
   pauseScheduler, resumeScheduler,
@@ -11,6 +11,7 @@ import SpcChart from '../components/SpcChart.vue'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
 const { connected } = useSocket()
+const appName = inject<Ref<string>>('appName', ref('DevPane'))
 
 const scheduler = ref<SchedulerStatus | null>(null)
 const pipeline = ref<PipelineStats | null>(null)
@@ -216,7 +217,7 @@ async function send() {
     <header>
       <div class="hdr">
         <div class="brand">
-          <h1>DevPane</h1>
+          <h1>{{ appName }}</h1>
           <span class="sub">autonomous dev team</span>
         </div>
         <div class="stats-bar">

@@ -99,6 +99,11 @@ export type ActiveHours = {
   end: number   // 0-23
 }
 
+// App config returned by GET /api/config
+export type AppConfig = {
+  appName: string
+}
+
 // Config
 export type Config = {
   APP_NAME: string
