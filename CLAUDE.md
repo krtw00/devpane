@@ -31,6 +31,10 @@ pnpm --filter @devpane/web dev
 - **共通**: TypeScript, pnpm workspace
 - **DB**: SQLite（予定）
 
+## 設計ドキュメント
+
+`design/` ディレクトリにtemplarc形式で管理。詳細は [design/00-index.md](design/00-index.md) を参照。
+
 ## 設計方針
 
 - AgentMineの安全性レイヤー（Proof-Carrying Run, Observable Facts, worktree隔離）を継承
