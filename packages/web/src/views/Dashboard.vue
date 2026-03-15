@@ -49,7 +49,7 @@ function formatDate(iso: string): string {
 let timer: ReturnType<typeof setInterval>
 let spcTimer: ReturnType<typeof setInterval>
 onMounted(() => {
-  refreshStatus(); timer = setInterval(refreshStatus, 3000)
+  refreshStatus(); timer = setInterval(refreshStatus, 10000)
   refreshSpc(); refreshImprovements(); spcTimer = setInterval(() => { refreshSpc(); refreshImprovements() }, 15000)
 })
 onUnmounted(() => { clearInterval(timer); clearInterval(spcTimer) })
@@ -129,6 +129,11 @@ onWsEvent('scheduler:stage', (p) => {
     scheduler.value.worker.taskTitle = payload.taskTitle
   }
   pushLog(workerLog, { text: `── ${payload.stage.toUpperCase()} ──`, type: 'stage' })
+})
+
+onWsEvent('scheduler:state', (p) => {
+  const payload = p as { paused: boolean }
+  if (scheduler.value) { scheduler.value.paused = payload.paused }
 })
 
 onWsEvent('task:updated', () => refreshStatus())
