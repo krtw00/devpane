@@ -21,11 +21,6 @@ export type PrReport = {
   reason: string
 }
 
-const RISK_LABELS: Record<RiskLevel, string> = {
-  recommended: "✅ Recommended",
-  needs_review: "⚠️ Needs Review",
-  not_recommended: "❌ Not Recommended",
-}
 
 export function parseGhPrList(json: string): PrInfo[] {
   const raw: Array<{
@@ -80,37 +75,40 @@ export function assessRisk(pr: PrInfo): PrReport {
   return { pr, diffSize, risk: "needs_review", reason: reasons.join(", ") }
 }
 
+const RISK_ICONS: Record<RiskLevel, string> = {
+  recommended: "✅",
+  needs_review: "⚠️",
+  not_recommended: "❌",
+}
+
 function formatReport(reports: PrReport[]): string {
   if (reports.length === 0) {
-    return `📋 **PR Daily Report**\nNo unmerged \`${config.BRANCH_PREFIX}/task-*\` PRs.`
+    return `📋 PR日報 — 未マージPRなし`
   }
-
-  const lines = [
-    "📋 **PR Daily Report**",
-    `PRs: ${reports.length}`,
-    "",
-    "```",
-    "PR#  | Diff  | Tests  | Risk       | Title",
-    "-----|-------|--------|------------|--------",
-  ]
-
-  for (const r of reports) {
-    const num = `#${r.pr.number}`.padEnd(4)
-    const diff = `+${r.pr.additions}/-${r.pr.deletions}`.padEnd(7)
-    const test = r.pr.testStatus.padEnd(8)
-    const risk = RISK_LABELS[r.risk].padEnd(12)
-    const title = r.pr.title.length > 40 ? r.pr.title.slice(0, 37) + "..." : r.pr.title
-    lines.push(`${num} | ${diff}| ${test}| ${risk}| ${title}`)
-  }
-
-  lines.push("```")
 
   const recommended = reports.filter((r) => r.risk === "recommended").length
   const needsReview = reports.filter((r) => r.risk === "needs_review").length
   const notRecommended = reports.filter((r) => r.risk === "not_recommended").length
 
-  lines.push("")
-  lines.push(`Recommended: ${recommended} / Needs Review: ${needsReview} / Not Recommended: ${notRecommended}`)
+  const counts = [
+    recommended > 0 ? `推奨${recommended}` : "",
+    needsReview > 0 ? `要確認${needsReview}` : "",
+    notRecommended > 0 ? `非推奨${notRecommended}` : "",
+  ].filter(Boolean).join(" / ")
+
+  const lines = [`📋 PR日報 — ${reports.length}件 (${counts})`, ""]
+
+  for (const r of reports) {
+    const icon = RISK_ICONS[r.risk]
+    const diff = `+${r.pr.additions}/-${r.pr.deletions}`
+    const test = r.pr.testStatus === "pass" ? "テスト全通過"
+      : r.pr.testStatus === "fail" ? "テスト失敗"
+      : ""
+    const detail = [diff, test].filter(Boolean).join(" ")
+    lines.push(`${icon} #${r.pr.number} ${r.pr.title} ${detail}`)
+  }
+
+  lines.push("", "→ 番号でマージ/クローズ")
 
   return lines.join("\n")
 }
