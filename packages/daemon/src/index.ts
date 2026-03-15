@@ -12,6 +12,7 @@ import { eventsApi } from "./api/events.js"
 import { memoriesApi } from "./api/memories.js"
 import { schedulerApi } from "./api/scheduler.js"
 import { prAgentApi } from "./api/pr-agent.js"
+import { configApi } from "./api/config.js"
 import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 import { killAllWorkers } from "./worker.js"
@@ -29,6 +30,7 @@ app.route("/events", eventsApi)
 app.route("/memories", memoriesApi)
 app.route("/scheduler", schedulerApi)
 app.route("/pr-agent", prAgentApi)
+app.route("/api/config", configApi)
 
 // Static file serving for production
 const webDistPath = resolve(import.meta.dirname, "../../web/dist")
