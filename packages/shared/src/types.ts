@@ -33,6 +33,7 @@ export type ObservableFacts = {
     passed: number
     failed: number
     exit_code: number
+    timed_out?: boolean
   }
   lint_result?: {
     errors: number
@@ -118,4 +119,14 @@ export type Config = {
   EFFECT_MEASURE_THRESHOLD: number
   KAIZEN_THRESHOLD: number
   MEMORY_CLEANUP_THRESHOLD: number
+  PRUNE_INTERVAL_HOURS: number
+  BASE_BRANCH: string
+  BUILD_CMD: string
+  TEST_CMD: string
+  LINT_CMD: string
+  BRANCH_PREFIX: string
+  TEST_DIR: string
+  TEST_FILE_PATTERN: string
+  TEST_FRAMEWORK: string
+  PR_MERGE_STRATEGY: string
 }

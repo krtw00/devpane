@@ -21,11 +21,6 @@ export type PrReport = {
   reason: string
 }
 
-const RISK_LABELS: Record<RiskLevel, string> = {
-  recommended: "✅ マージ推奨",
-  needs_review: "⚠️ 要確認",
-  not_recommended: "❌ 非推奨",
-}
 
 export function parseGhPrList(json: string): PrInfo[] {
   const raw: Array<{
@@ -39,7 +34,7 @@ export function parseGhPrList(json: string): PrInfo[] {
   }> = JSON.parse(json)
 
   return raw
-    .filter((pr) => pr.headRefName.startsWith("devpane/task-"))
+    .filter((pr) => pr.headRefName.startsWith(`${config.BRANCH_PREFIX}/task-`))
     .map((pr) => {
       let testStatus: PrInfo["testStatus"] = "unknown"
       if (pr.statusCheckRollup && pr.statusCheckRollup.length > 0) {
@@ -66,51 +61,54 @@ export function assessRisk(pr: PrInfo): PrReport {
   const diffSize = pr.additions + pr.deletions
 
   if (pr.testStatus === "fail") {
-    return { pr, diffSize, risk: "not_recommended", reason: "テスト失敗" }
+    return { pr, diffSize, risk: "not_recommended", reason: "tests failed" }
   }
 
   if (pr.testStatus === "pass" && diffSize < config.PR_RISK_DIFF_THRESHOLD) {
-    return { pr, diffSize, risk: "recommended", reason: "テスト通過 & diff小" }
+    return { pr, diffSize, risk: "recommended", reason: "tests pass & small diff" }
   }
 
   const reasons: string[] = []
-  if (pr.testStatus === "unknown") reasons.push("テスト結果不明")
-  if (diffSize >= config.PR_RISK_DIFF_THRESHOLD) reasons.push(`diff大 (${diffSize}行)`)
+  if (pr.testStatus === "unknown") reasons.push("test status unknown")
+  if (diffSize >= config.PR_RISK_DIFF_THRESHOLD) reasons.push(`large diff (${diffSize} lines)`)
 
   return { pr, diffSize, risk: "needs_review", reason: reasons.join(", ") }
 }
 
+const RISK_ICONS: Record<RiskLevel, string> = {
+  recommended: "✅",
+  needs_review: "⚠️",
+  not_recommended: "❌",
+}
+
 function formatReport(reports: PrReport[]): string {
   if (reports.length === 0) {
-    return "📋 **PR日次レポート**\n未マージの`devpane/task-*` PRはありません。"
+    return `📋 PR日報 — 未マージPRなし`
   }
-
-  const lines = [
-    "📋 **PR日次レポート**",
-    `対象PR: ${reports.length}件`,
-    "",
-    "```",
-    "PR#  | Diff  | テスト | 判定       | タイトル",
-    "-----|-------|--------|------------|--------",
-  ]
-
-  for (const r of reports) {
-    const num = `#${r.pr.number}`.padEnd(4)
-    const diff = `+${r.pr.additions}/-${r.pr.deletions}`.padEnd(7)
-    const test = r.pr.testStatus.padEnd(8)
-    const risk = RISK_LABELS[r.risk].padEnd(12)
-    const title = r.pr.title.length > 40 ? r.pr.title.slice(0, 37) + "..." : r.pr.title
-    lines.push(`${num} | ${diff}| ${test}| ${risk}| ${title}`)
-  }
-
-  lines.push("```")
 
   const recommended = reports.filter((r) => r.risk === "recommended").length
   const needsReview = reports.filter((r) => r.risk === "needs_review").length
   const notRecommended = reports.filter((r) => r.risk === "not_recommended").length
 
-  lines.push("")
-  lines.push(`推奨: ${recommended} / 要確認: ${needsReview} / 非推奨: ${notRecommended}`)
+  const counts = [
+    recommended > 0 ? `推奨${recommended}` : "",
+    needsReview > 0 ? `要確認${needsReview}` : "",
+    notRecommended > 0 ? `非推奨${notRecommended}` : "",
+  ].filter(Boolean).join(" / ")
+
+  const lines = [`📋 PR日報 — ${reports.length}件 (${counts})`, ""]
+
+  for (const r of reports) {
+    const icon = RISK_ICONS[r.risk]
+    const diff = `+${r.pr.additions}/-${r.pr.deletions}`
+    const test = r.pr.testStatus === "pass" ? "テスト全通過"
+      : r.pr.testStatus === "fail" ? "テスト失敗"
+      : ""
+    const detail = [diff, test].filter(Boolean).join(" ")
+    lines.push(`${icon} #${r.pr.number} ${r.pr.title} ${detail}`)
+  }
+
+  lines.push("", "→ 番号でマージ/クローズ")
 
   return lines.join("\n")
 }

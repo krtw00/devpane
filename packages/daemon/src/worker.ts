@@ -34,20 +34,20 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
     if (testFiles.length > 0) {
       promptParts.push(
         "",
-        "## テスト先行実装",
-        "以下のテストファイルが既にworktree内に存在する。これらのテストを通す実装を書け。",
-        "テストの意図を読み取り、仕様通りの実装を行うこと。テストを削除・改変してはならない。",
+        "## Test-First Implementation",
+        "The following test files already exist in the worktree. Write the implementation that makes these tests pass.",
+        "Read the tests to understand the specification. Do NOT delete or modify the test files.",
         ...testFiles.map(f => `- ${f}`),
       )
     }
 
     promptParts.push(
       "",
-      "## 品質要件（必須）",
-      "- 実装後に `pnpm build` が通ること（型エラーなし）",
-      "- `pnpm test` が通ること（既存テストを壊さない）",
-      "- lint警告を残さないこと（未使用import、未使用変数など）",
-      "- 新規ファイルは既存コードのスタイルに従うこと",
+      "## Quality Requirements (mandatory)",
+      `- \`${config.BUILD_CMD}\` must pass (no type errors)`,
+      `- \`${config.TEST_CMD}\` must pass (do not break existing tests)`,
+      "- No lint warnings (unused imports, unused variables, etc.)",
+      "- New files must follow the existing code style",
     )
 
     const fullPrompt = promptParts.join("\n")

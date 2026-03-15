@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Task, ObservableFacts } from "@devpane/shared"
+import type { AgentEvent } from "@devpane/shared/schemas"
 import type { Gate1Result } from "../gate1.js"
 import type { Gate2Result } from "../gate2.js"
 import type { Gate3Result } from "../gate.js"
@@ -11,15 +12,14 @@ import type { WorkerResult } from "../worker.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
-// --- Mocks ---
-
-vi.mock("../events.js", () => ({
-  emit: vi.fn(),
-  safeEmit: vi.fn(() => true),
-}))
+// --- Mocks (emit is NOT mocked — uses real DB insertion) ---
 
 vi.mock("../ws.js", () => ({
   broadcast: vi.fn(),
+}))
+
+vi.mock("../discord.js", () => ({
+  notify: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock("../scheduler-plugins.js", () => ({
@@ -75,20 +75,14 @@ vi.mock("../facts.js", () => ({
   collectFacts: () => mockCollectFacts(),
 }))
 
-const mockCreateWorktree = vi.fn<() => string>()
-const mockRemoveWorktree = vi.fn()
-const mockCreatePullRequest = vi.fn<(a?: unknown, b?: unknown, c?: unknown) => string | null>()
-const mockAutoMergePr = vi.fn<(a?: unknown) => boolean>()
-const mockPullMain = vi.fn()
 vi.mock("../worktree.js", () => ({
-  createWorktree: () => mockCreateWorktree(),
-  removeWorktree: (...args: unknown[]) => mockRemoveWorktree(...args),
-  createPullRequest: (a: unknown, b?: unknown, c?: unknown) => mockCreatePullRequest(a, b, c),
-  autoMergePr: (a: unknown) => mockAutoMergePr(a),
-  pullMain: () => mockPullMain(),
+  createWorktree: vi.fn(() => "/tmp/worktree"),
+  removeWorktree: vi.fn(),
+  createPullRequest: vi.fn(() => null),
+  autoMergePr: vi.fn(() => false),
+  pullMain: vi.fn(),
   pruneWorktrees: vi.fn(),
   countOpenPrs: vi.fn(() => 0),
-  getWorktreeNewAndDeleted: vi.fn(() => ({ added: [], deleted: [] })),
 }))
 
 vi.mock("../circuit-breaker.js", () => ({
@@ -105,48 +99,14 @@ vi.mock("../pr-agent.js", () => ({
   runPrAgent: vi.fn(),
 }))
 
-vi.mock("../memory.js", () => ({
-  remember: vi.fn(),
-  forget: vi.fn(),
-  findSimilar: vi.fn(() => []),
-  cleanupOldLessons: vi.fn(() => 0),
-}))
-
-vi.mock("../spc.js", () => ({
-  recordTaskMetrics: vi.fn(),
-  checkAllMetrics: vi.fn(() => []),
-  recordMetric: vi.fn(),
-  checkMetric: vi.fn(),
-}))
-
-vi.mock("../morning-report.js", () => ({
-  sendMorningReport: vi.fn(),
-}))
-
-vi.mock("../kaizen.js", () => ({
-  analyze: vi.fn(),
-}))
-
-vi.mock("../effect-measure.js", () => ({
-  measureAllActive: vi.fn(() => []),
-}))
-
-// DB: use real in-memory SQLite
+// Real DB + real events.js (no mock)
 import { initDb, closeDb, createTask } from "../db.js"
-
-vi.mock("../db.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../db.js")>()
-  return {
-    ...actual,
-    appendLog: vi.fn(),
-    updateTaskCost: vi.fn(),
-  }
-})
+import { getAgentEvents, getEventsByTaskId } from "../db/events.js"
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return createTask(
-    overrides.title ?? "test task for hasPr logic",
-    overrides.description ?? "a sufficiently long task description for gate1",
+    overrides.title ?? "gate3 recycle event test task",
+    overrides.description ?? "a sufficiently long task description for gate1 validation",
     "human",
     overrides.priority ?? 50,
   )
@@ -175,14 +135,14 @@ function goodWorkerResult(): WorkerResult {
   }
 }
 
-describe("hasPr判定: removeWorktreeのkeepBranch引数", () => {
+describe("gate3 recycle時にtask.startedを誤発火しない", () => {
   beforeEach(() => {
     initDb(":memory:", migrationsDir)
     vi.clearAllMocks()
 
-    mockCreateWorktree.mockReturnValue("/tmp/worktree")
+    // Default: all gates pass
     mockRunGate1.mockResolvedValue({ verdict: "go", reasons: [] })
-    mockRunTester.mockResolvedValue({ testFiles: ["src/__tests__/foo.test.ts"], exit_code: 0, timedOut: false })
+    mockRunTester.mockResolvedValue({ testFiles: ["src/__tests__/foo.test.ts"], exit_code: 0 })
     mockRunGate2.mockReturnValue({ verdict: "go", reasons: [] })
     mockRunWorker.mockResolvedValue(goodWorkerResult())
     mockCollectFacts.mockReturnValue(goodFacts())
@@ -193,44 +153,73 @@ describe("hasPr判定: removeWorktreeのkeepBranch引数", () => {
     closeDb()
   })
 
-  it("gate3=go, commit_hashあり, PR作成失敗(null) → removeWorktree(keepBranch=false)で不要ブランチが残らない", async () => {
-    mockCreatePullRequest.mockReturnValue(null)
-
+  it("gate3 recycle後にtask.startedイベントがagent_eventsに含まれない", async () => {
     const { executeTask } = await import("../scheduler.js")
+    mockRunGate3.mockReturnValue({
+      verdict: "recycle",
+      reasons: ["tests failed: 2"],
+    })
+    mockCollectFacts.mockReturnValue(goodFacts({ test_result: { passed: 3, failed: 2, exit_code: 1 } }))
     const task = makeTask()
 
     await executeTask(task)
 
-    expect(mockCreatePullRequest).toHaveBeenCalled()
-    // PR作成失敗時はkeepBranch=falseでworktreeを削除すべき
-    expect(mockRemoveWorktree).toHaveBeenCalledWith(task.id, false)
+    // task.startedイベントはrequeueで発火されるべきではない
+    const taskEvents = getEventsByTaskId(task.id)
+    const taskStartedEvents = taskEvents.filter((e) => e.type === "task.started")
+    expect(taskStartedEvents).toHaveLength(0)
   })
 
-  it("gate3=go, commit_hashあり, PR作成成功 → removeWorktree(keepBranch=true)でブランチ保持", async () => {
-    mockCreatePullRequest.mockReturnValue("https://github.com/test/pr/1")
-    mockAutoMergePr.mockReturnValue(true)
-
+  it("gate3 recycle後にworkerId='requeued'のtask.startedが存在しない", async () => {
     const { executeTask } = await import("../scheduler.js")
+    mockRunGate3.mockReturnValue({
+      verdict: "recycle",
+      reasons: ["lint errors"],
+    })
+    mockCollectFacts.mockReturnValue(goodFacts({ lint_result: { errors: 3, exit_code: 1 } }))
     const task = makeTask()
 
     await executeTask(task)
 
-    expect(mockCreatePullRequest).toHaveBeenCalled()
-    // auto-merge成功時はブランチ不要（keepBranch=false）
-    expect(mockRemoveWorktree).toHaveBeenCalledWith(task.id, false)
+    const allStarted = getAgentEvents({ type: "task.started" })
+    const requeuedStarted = allStarted.filter(
+      (e) => e.type === "task.started" && (e as Extract<AgentEvent, { type: "task.started" }>).workerId === "requeued",
+    )
+    expect(requeuedStarted).toHaveLength(0)
   })
 
-  it("gate3=go, commit_hashなし(PR作成スキップ) → removeWorktree(keepBranch=false)", async () => {
-    mockCollectFacts.mockReturnValue(goodFacts({ commit_hash: undefined }))
+  it("gate3 recycle時にgate.rejectedイベントは正しく記録される", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockRunGate3.mockReturnValue({
+      verdict: "recycle",
+      reasons: ["tests failed: 2"],
+    })
+    mockCollectFacts.mockReturnValue(goodFacts({ test_result: { passed: 3, failed: 2, exit_code: 1 } }))
+    const task = makeTask()
 
+    await executeTask(task)
+
+    const events = getAgentEvents({ type: "gate.rejected" })
+    const rejected = events.find(
+      (e) => e.type === "gate.rejected" && "gate" in e && e.gate === "gate3",
+    ) as Extract<AgentEvent, { type: "gate.rejected" }> | undefined
+    expect(rejected).toBeTruthy()
+    expect(rejected!.taskId).toBe(task.id)
+    expect(rejected!.verdict).toBe("recycle")
+    expect(rejected!.reason).toContain("tests failed")
+  })
+
+  it("gate3 go時にはtask.startedの誤発火がない（正常パスの確認）", async () => {
     const { executeTask } = await import("../scheduler.js")
     const task = makeTask()
 
     await executeTask(task)
 
-    // commit_hashがないのでPR作成は試みられない
-    expect(mockCreatePullRequest).not.toHaveBeenCalled()
-    // PRがないのでkeepBranch=false
-    expect(mockRemoveWorktree).toHaveBeenCalledWith(task.id, false)
+    // goパスではtask.startedはexecuteTask冒頭で1回だけ発火される（もしあれば）
+    const taskEvents = getEventsByTaskId(task.id)
+    const requeuedStarted = taskEvents.filter(
+      (e) => e.type === "task.started" && (e as Extract<AgentEvent, { type: "task.started" }>).workerId === "requeued",
+    )
+    expect(requeuedStarted).toHaveLength(0)
   })
 })

@@ -78,7 +78,7 @@ describe("Tester → Gate 2 pipeline", () => {
   describe("buildTesterPrompt with constraints", () => {
     it("includes constraints in the prompt", () => {
       const prompt = buildTesterPrompt(spec)
-      expect(prompt).toContain("制約条件")
+      expect(prompt).toContain("Constraints")
       expect(prompt).toContain("use HS256")
       expect(prompt).toContain("token expires in 1h")
     })
@@ -89,7 +89,7 @@ describe("Tester → Gate 2 pipeline", () => {
         reasoning: "test",
       }
       const prompt = buildTesterPrompt(noConstraints)
-      expect(prompt).not.toContain("制約条件")
+      expect(prompt).not.toContain("Constraints")
     })
 
     it("includes task title and description", () => {

@@ -76,6 +76,11 @@ export async function createTask(data: { title: string; description: string; pri
   return res.json()
 }
 
+export async function retryTask(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/tasks/${id}/retry`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
 export type CostStats = {
   total_cost: number
   total_tasks: number

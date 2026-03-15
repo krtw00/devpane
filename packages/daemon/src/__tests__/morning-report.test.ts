@@ -8,6 +8,7 @@ const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 vi.mock("../notifier-factory.js", () => ({
   getNotifier: () => ({
     sendMessage: vi.fn().mockResolvedValue(undefined),
+    sendReport: vi.fn().mockResolvedValue(undefined),
     notify: vi.fn().mockResolvedValue(undefined),
   }),
 }))
@@ -28,7 +29,7 @@ describe("morning-report", () => {
     closeDb()
   })
 
-  it("formatReport generates table with pipeline traces", async () => {
+  it("formatReport generates structured report with pipeline traces", async () => {
     const { createTask, startTask, finishTask, getTask } = await import("../db.js")
     const { insertAgentEvent } = await import("../db/events.js")
     const { formatReport } = await import("../morning-report.js")
@@ -68,15 +69,16 @@ describe("morning-report", () => {
 
     const report = formatReport(summary)
 
-    expect(report).toContain("朝レポート")
-    expect(report).toContain("1 完了 / 1 失敗")
-    expect(report).toContain("$0.05")
-    // Table headers
-    expect(report).toContain("| タスク")
-    expect(report).toContain("| G1 |")
-    // Task names in table
-    expect(report).toContain("テスト改善")
-    expect(report).toContain("バグ修正")
+    // Structured report
+    expect(report.title).toContain("朝レポート")
+    expect(report.summary).toContain("1 完了 / 1 失敗")
+    expect(report.summary).toContain("$0.05")
+
+    // Pipeline section with task names
+    const pipelineSection = report.sections.find(s => s.heading === "パイプライン")
+    expect(pipelineSection).toBeDefined()
+    expect(pipelineSection!.body).toContain("テスト改善")
+    expect(pipelineSection!.body).toContain("バグ修正")
   })
 
   it("formatReport handles empty shift", async () => {
@@ -95,7 +97,9 @@ describe("morning-report", () => {
 
     const report = formatReport(summary)
 
-    expect(report).toContain("0 完了 / 0 失敗")
-    expect(report).toContain("稼働タスクはありませんでした")
+    expect(report.summary).toContain("0 完了 / 0 失敗")
+    const noteSection = report.sections.find(s => s.heading === "備考")
+    expect(noteSection).toBeDefined()
+    expect(noteSection!.body).toContain("稼働タスクはありませんでした")
   })
 })
