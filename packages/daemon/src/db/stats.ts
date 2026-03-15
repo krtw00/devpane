@@ -5,11 +5,12 @@ export function getPipelineStats() {
 
   const recentGate3 = d.prepare(`
     SELECT
-      COUNT(*) FILTER (WHERE json_extract(payload, '$.verdict') = 'go') AS pass_count,
+      COUNT(*) FILTER (WHERE type = 'gate.passed') AS pass_count,
       COUNT(*) AS total
     FROM (
       SELECT * FROM agent_events
       WHERE type IN ('gate.passed', 'gate.rejected')
+        AND json_extract(payload, '$.gate') = 'gate3'
       ORDER BY timestamp DESC LIMIT 20
     )
   `).get() as { pass_count: number; total: number }
