@@ -1,0 +1,16 @@
+[Unit]
+Description=DevPane autonomous development daemon
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/devpane
+ExecStart=/usr/bin/docker compose up --build
+ExecStop=/usr/bin/docker compose down
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/devpane/.env
+
+[Install]
+WantedBy=default.target

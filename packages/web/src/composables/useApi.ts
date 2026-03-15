@@ -158,6 +158,40 @@ export async function deleteMemory(id: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
+export type SpcDataPoint = {
+  value: number
+  label: string
+  task_id: string
+}
+
+export type SpcMetricData = {
+  metric: string
+  data: SpcDataPoint[]
+  mean: number
+  ucl: number
+  lcl: number
+}
+
+export function fetchSpcMetric(metric: string, limit = 20): Promise<SpcMetricData> {
+  return fetchJson<SpcMetricData>(`/stats/spc/${metric}?limit=${limit}`)
+}
+
+export type Improvement = {
+  id: string
+  trigger_analysis: string
+  target: string
+  action: string
+  applied_at: string
+  status: 'active' | 'reverted' | 'permanent'
+  before_metrics: string | null
+  after_metrics: string | null
+  verdict: string | null
+}
+
+export function fetchImprovements(limit = 30): Promise<Improvement[]> {
+  return fetchJson<Improvement[]>(`/stats/improvements?limit=${limit}`)
+}
+
 export type SchedulerStatus = {
   alive: boolean
   paused: boolean

@@ -1,0 +1,20 @@
+services:
+  devpane:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/data
+      - ${PROJECT_ROOT:-.}:/app/workspace
+    environment:
+      - PROJECT_ROOT=/app/workspace
+      - DB_PATH=/app/data/devpane.db
+      - DISCORD_WEBHOOK_URL
+      - SLACK_WEBHOOK_URL
+      - ACTIVE_HOURS
+      - DEVPANE_BRANCH_PREFIX
+      - DEVPANE_BASE_BRANCH
+      - DEVPANE_BUILD_CMD
+      - DEVPANE_TEST_CMD
+    working_dir: /app

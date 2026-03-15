@@ -101,6 +101,7 @@ export type ActiveHours = {
 
 // Config
 export type Config = {
+  APP_NAME: string
   PROJECT_ROOT: string
   WORKER_TIMEOUT_MS: number
   PM_TIMEOUT_MS: number

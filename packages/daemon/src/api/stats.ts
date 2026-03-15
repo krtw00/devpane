@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { getCostStats, getPipelineStats } from "../db.js"
+import { getCostStats, getPipelineStats, getRecentImprovements, getSpcMetrics } from "../db.js"
 
 export const statsApi = new Hono()
 
@@ -11,4 +11,17 @@ statsApi.get("/cost", (c) => {
 statsApi.get("/pipeline", (c) => {
   const stats = getPipelineStats()
   return c.json(stats)
+})
+
+statsApi.get("/spc/:metric", (c) => {
+  const metric = c.req.param("metric")
+  const limit = Number(c.req.query("limit") ?? 20)
+  const data = getSpcMetrics(metric, limit)
+  return c.json(data)
+})
+
+statsApi.get("/improvements", (c) => {
+  const limit = Number(c.req.query("limit") ?? 30)
+  const improvements = getRecentImprovements(limit)
+  return c.json(improvements)
 })

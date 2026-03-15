@@ -1,4 +1,7 @@
 import { serve } from "@hono/node-server"
+import { serveStatic } from "@hono/node-server/serve-static"
+import { existsSync } from "node:fs"
+import { resolve, relative } from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { config } from "./config.js"
@@ -27,13 +30,23 @@ app.route("/memories", memoriesApi)
 app.route("/scheduler", schedulerApi)
 app.route("/pr-agent", prAgentApi)
 
-console.log(`[devpane] starting daemon on port ${config.API_PORT}`)
-console.log(`[devpane] project root: ${config.PROJECT_ROOT}`)
+// Static file serving for production
+const webDistPath = resolve(import.meta.dirname, "../../web/dist")
+if (existsSync(webDistPath)) {
+  const root = relative(process.cwd(), webDistPath)
+  app.use("/*", serveStatic({ root }))
+  // SPA fallback: serve index.html for non-API routes
+  app.get("*", serveStatic({ root, path: "index.html" }))
+  console.log(`[${config.APP_NAME.toLowerCase()}] serving web UI from ${webDistPath}`)
+}
+
+console.log(`[${config.APP_NAME.toLowerCase()}] starting daemon on port ${config.API_PORT}`)
+console.log(`[${config.APP_NAME.toLowerCase()}] project root: ${config.PROJECT_ROOT}`)
 
 const server = serve({ fetch: app.fetch, port: config.API_PORT }, () => {
-  console.log(`[devpane] daemon listening on http://localhost:${config.API_PORT}`)
+  console.log(`[${config.APP_NAME.toLowerCase()}] daemon listening on http://localhost:${config.API_PORT}`)
   startScheduler().catch((err) => {
-    console.error("[devpane] scheduler crashed:", err)
+    console.error(`[${config.APP_NAME.toLowerCase()}] scheduler crashed:`, err)
     process.exit(1)
   })
 })
@@ -42,7 +55,7 @@ attachWebSocket(server)
 
 // Graceful shutdown
 async function shutdown() {
-  console.log("[devpane] shutting down...")
+  console.log(`[${config.APP_NAME.toLowerCase()}] shutting down...`)
   await stopScheduler()
   killAllWorkers()
   killAllPm()

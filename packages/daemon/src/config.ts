@@ -14,6 +14,7 @@ function findGitRoot(): string {
 }
 
 export const config: Config = {
+  APP_NAME: env("APP_NAME", "DevPane"),
   PROJECT_ROOT: env("PROJECT_ROOT", findGitRoot()),
   WORKER_TIMEOUT_MS: Number(env("WORKER_TIMEOUT_MS", "600000")),
   PM_TIMEOUT_MS: Number(env("PM_TIMEOUT_MS", "300000")),

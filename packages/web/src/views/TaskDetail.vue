@@ -41,6 +41,20 @@ const facts = computed(() => {
     return null
   }
 })
+
+const diffAddPct = computed(() => {
+  if (!facts.value?.diff_stats) return 0
+  const { additions, deletions } = facts.value.diff_stats
+  const total = additions + deletions
+  return total === 0 ? 0 : Math.round((additions / total) * 100)
+})
+
+const diffDelPct = computed(() => {
+  if (!facts.value?.diff_stats) return 0
+  const { additions, deletions } = facts.value.diff_stats
+  const total = additions + deletions
+  return total === 0 ? 0 : Math.round((deletions / total) * 100)
+})
 </script>
 
 <template>
@@ -67,14 +81,18 @@ const facts = computed(() => {
         <div class="facts-grid">
           <div>exit: <strong>{{ facts.exit_code }}</strong></div>
           <div>files: <strong>{{ facts.files_changed?.length ?? 0 }}</strong></div>
-          <div v-if="facts.diff_stats">
-            +{{ facts.diff_stats.additions }} / -{{ facts.diff_stats.deletions }}
-          </div>
           <div v-if="facts.test_result">
             tests: {{ facts.test_result.passed }} pass / {{ facts.test_result.failed }} fail
           </div>
           <div v-if="facts.branch">branch: {{ facts.branch }}</div>
           <div v-if="facts.commit_hash">commit: {{ facts.commit_hash?.slice(0, 8) }}</div>
+        </div>
+        <div v-if="facts.diff_stats" class="diff-bar-container">
+          <div class="diff-bar">
+            <span class="additions" :style="{ width: diffAddPct + '%' }">+{{ facts.diff_stats.additions }}</span>
+            <span class="deletions" :style="{ width: diffDelPct + '%' }">-{{ facts.diff_stats.deletions }}</span>
+          </div>
+          <span class="diff-total">{{ facts.diff_stats.additions + facts.diff_stats.deletions }} 行</span>
         </div>
         <details v-if="facts.files_changed?.length">
           <summary>変更ファイル ({{ facts.files_changed.length }})</summary>
@@ -285,5 +303,50 @@ details ul {
 .failure-label {
   color: #8b949e;
   margin-right: 0.25rem;
+}
+
+.diff-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.diff-bar {
+  display: flex;
+  flex: 1;
+  height: 20px;
+  border-radius: 3px;
+  overflow: hidden;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.diff-bar .additions {
+  background: #3fb950;
+  color: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.diff-bar .deletions {
+  background: #f85149;
+  color: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.diff-total {
+  color: #484f58;
+  font-size: 0.7rem;
+  flex-shrink: 0;
 }
 </style>

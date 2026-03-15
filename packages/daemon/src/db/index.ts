@@ -1,5 +1,5 @@
 export { getDb, initDb, closeDb } from "./core.js"
 export { createTask, getNextPending, getTask, getAllTasks, getTasksByStatus, getRecentDone, getAllDoneTitles, getFailedTasks, startTask, finishTask, revertToPending, requeueTask, getRetryCount, updateTaskCost, appendLog, getTaskLogs, getTasksSince } from "./tasks.js"
 export { insertAgentEvent, getAgentEvents } from "./events.js"
-export { getActiveImprovements } from "./improvements.js"
+export { getActiveImprovements, getRecentImprovements } from "./improvements.js"
 export { getPipelineStats, getCostStats } from "./stats.js"

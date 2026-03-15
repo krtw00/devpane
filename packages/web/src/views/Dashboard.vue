@@ -3,8 +3,11 @@ import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import {
   fetchSchedulerStatus, fetchPipelineStats, fetchEvents,
   pauseScheduler, resumeScheduler,
+  fetchSpcMetric, fetchImprovements,
   type PipelineStats, type SchedulerStatus, type AgentEvent,
+  type SpcMetricData, type Improvement,
 } from '../composables/useApi'
+import SpcChart from '../components/SpcChart.vue'
 import { useSocket, onWsEvent, sendChat } from '../composables/useSocket'
 
 const { connected } = useSocket()
@@ -14,15 +17,42 @@ const pipeline = ref<PipelineStats | null>(null)
 
 const recentEvents = ref<AgentEvent[]>([])
 
+const spcCost = ref<SpcMetricData | null>(null)
+const spcExecTime = ref<SpcMetricData | null>(null)
+const spcDiffSize = ref<SpcMetricData | null>(null)
+const improvements = ref<Improvement[]>([])
+
 async function refreshStatus() {
   try { scheduler.value = await fetchSchedulerStatus() } catch {}
   try { pipeline.value = await fetchPipelineStats() } catch {}
   try { recentEvents.value = await fetchEvents(20) } catch {}
 }
 
+async function refreshSpc() {
+  try { spcCost.value = await fetchSpcMetric('cost_usd') } catch {}
+  try { spcExecTime.value = await fetchSpcMetric('execution_time') } catch {}
+  try { spcDiffSize.value = await fetchSpcMetric('diff_size') } catch {}
+}
+
+async function refreshImprovements() {
+  try { improvements.value = await fetchImprovements(20) } catch {}
+}
+
+function statusBadgeClass(status: string): string {
+  return { active: 'imp-active', permanent: 'imp-permanent', reverted: 'imp-reverted' }[status] ?? ''
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 let timer: ReturnType<typeof setInterval>
-onMounted(() => { refreshStatus(); timer = setInterval(refreshStatus, 3000) })
-onUnmounted(() => clearInterval(timer))
+let spcTimer: ReturnType<typeof setInterval>
+onMounted(() => {
+  refreshStatus(); timer = setInterval(refreshStatus, 3000)
+  refreshSpc(); refreshImprovements(); spcTimer = setInterval(() => { refreshSpc(); refreshImprovements() }, 15000)
+})
+onUnmounted(() => { clearInterval(timer); clearInterval(spcTimer) })
 
 // --- Scheduler control ---
 const toggling = ref(false)
@@ -256,6 +286,43 @@ async function send() {
       </div>
     </div>
 
+    <!-- SPC Charts -->
+    <div class="spc-section">
+      <SpcChart
+        v-if="spcCost"
+        :data="spcCost.data" :ucl="spcCost.ucl" :lcl="spcCost.lcl" :mean="spcCost.mean"
+        title="SPC: コスト (USD)" />
+      <SpcChart
+        v-if="spcExecTime"
+        :data="spcExecTime.data" :ucl="spcExecTime.ucl" :lcl="spcExecTime.lcl" :mean="spcExecTime.mean"
+        title="SPC: 実行時間 (ms)" />
+      <SpcChart
+        v-if="spcDiffSize"
+        :data="spcDiffSize.data" :ucl="spcDiffSize.ucl" :lcl="spcDiffSize.lcl" :mean="spcDiffSize.mean"
+        title="SPC: Diff サイズ" />
+    </div>
+
+    <!-- Improvements -->
+    <div v-if="improvements.length > 0" class="improvements-section">
+      <div class="imp-hdr">改善履歴</div>
+      <div class="imp-table">
+        <div class="imp-row imp-header-row">
+          <span class="imp-col-target">対象</span>
+          <span class="imp-col-action">アクション</span>
+          <span class="imp-col-status">状態</span>
+          <span class="imp-col-verdict">判定</span>
+          <span class="imp-col-date">適用日</span>
+        </div>
+        <div v-for="imp in improvements" :key="imp.id" class="imp-row">
+          <span class="imp-col-target">{{ imp.target }}</span>
+          <span class="imp-col-action">{{ imp.action }}</span>
+          <span class="imp-col-status"><span :class="['imp-badge', statusBadgeClass(imp.status)]">{{ imp.status }}</span></span>
+          <span class="imp-col-verdict">{{ imp.verdict ?? '-' }}</span>
+          <span class="imp-col-date">{{ formatDate(imp.applied_at) }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Bottom: Events + Chat -->
     <div class="bottom">
       <!-- Event Feed -->
@@ -429,4 +496,40 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
   padding: 0.2rem 0.5rem; font-family: inherit; font-size: 0.7rem; cursor: pointer;
 }
 .chat-form button:disabled { opacity: 0.3; }
+
+/* SPC Charts */
+.spc-section {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.5rem;
+  margin-bottom: 0.5rem; flex-shrink: 0;
+}
+
+/* Improvements */
+.improvements-section {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+  margin-bottom: 0.5rem; flex-shrink: 0; overflow: hidden;
+}
+.imp-hdr {
+  padding: 0.3rem 0.5rem; background: #161b22; border-bottom: 1px solid #21262d;
+  font-weight: 700; color: #f0f6fc; font-size: 0.7rem;
+}
+.imp-table { max-height: 180px; overflow-y: auto; }
+.imp-row {
+  display: grid; grid-template-columns: 80px 1fr 70px 80px 100px;
+  gap: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.65rem;
+  border-bottom: 1px solid #161b22; align-items: center;
+}
+.imp-row:last-child { border-bottom: none; }
+.imp-header-row { color: #484f58; font-weight: 700; background: #161b2280; position: sticky; top: 0; }
+.imp-col-target { color: #8b949e; }
+.imp-col-action { color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.imp-col-status { }
+.imp-col-verdict { color: #8b949e; }
+.imp-col-date { color: #484f58; }
+.imp-badge {
+  padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.6rem; font-weight: 600;
+  background: #21262d;
+}
+.imp-active { color: #58a6ff; }
+.imp-permanent { color: #3fb950; }
+.imp-reverted { color: #f85149; }
 </style>
