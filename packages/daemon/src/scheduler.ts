@@ -66,6 +66,9 @@ let rateLimitHits = 0
 let pmConsecutiveFailures = 0
 let currentTaskPromise: Promise<void> | null = null
 let lastPruneAt = 0
+let prevOpenPrs: number | null = null
+let lastPullMainAt = 0
+const PULL_MAIN_INTERVAL_MS = 5 * 60 * 1000
 
 // --- Agent state tracking for Shogun UI ---
 export type AgentStatus = "idle" | "running"
@@ -580,13 +583,25 @@ export async function startScheduler(): Promise<void> {
       for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
+
+    // PRがマージされた（openPrs減少）or 一定時間経過 → mainを最新化
+    const openPrsDecreased = prevOpenPrs !== null && openPrs < prevOpenPrs
+    const pullMainDue = Date.now() - lastPullMainAt >= PULL_MAIN_INTERVAL_MS
+    if (openPrsDecreased || pullMainDue) {
+      try {
+        pullMain()
+        lastPullMainAt = Date.now()
+      } catch (err) {
+        console.error(`[scheduler] pullMain failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    prevOpenPrs = openPrs
+
     if (openPrs >= config.MAX_OPEN_PRS) {
       console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${config.MAX_OPEN_PRS}), waiting...`)
       for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
-    // PRがなくなった = マージされた → mainを最新化してコンフリクト防止
-    pullMain()
 
     // 1. Check for pending tasks
     let task = getNextPending()
