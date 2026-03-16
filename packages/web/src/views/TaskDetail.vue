@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useTaskDetail, fetchEvents, retryTask, type AgentEvent } from '../composables/useApi'
+import { useTaskDetail, fetchEvents, fetchTaskTrace, retryTask, type AgentEvent, type PipelineTrace } from '../composables/useApi'
 import { ref } from 'vue'
 
 const props = defineProps<{ id: string }>()
 const { task, logs, refresh } = useTaskDetail(props.id)
+
+const trace = ref<PipelineTrace | null>(null)
+
+async function loadTrace() {
+  try { trace.value = await fetchTaskTrace(props.id) } catch {}
+}
 
 let timer: ReturnType<typeof setInterval>
 
 onMounted(() => {
   refresh()
   loadPrUrl()
-  timer = setInterval(refresh, 3000)
+  loadTrace()
+  timer = setInterval(() => { refresh(); loadTrace() }, 3000)
 })
 
 onUnmounted(() => clearInterval(timer))
@@ -74,6 +81,18 @@ const diffDelPct = computed(() => {
       <section class="description">
         <h2>説明</h2>
         <pre>{{ task.description }}</pre>
+      </section>
+
+      <section v-if="trace" class="pipeline-trace">
+        <h2>パイプライン</h2>
+        <div class="stages">
+          <span class="stg" :class="trace.gate1">G1</span>
+          <span class="stg" :class="trace.tester">T</span>
+          <span class="stg" :class="trace.gate2">G2</span>
+          <span class="stg" :class="trace.worker">W</span>
+          <span class="stg" :class="trace.gate3">G3</span>
+          <span class="stg-outcome">{{ trace.outcome }}</span>
+        </div>
       </section>
 
       <section v-if="facts" class="facts">
@@ -303,6 +322,34 @@ details ul {
 .failure-label {
   color: #8b949e;
   margin-right: 0.25rem;
+}
+
+.pipeline-trace { margin-top: 1rem; }
+
+.stages {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.stg {
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #21262d;
+  color: #30363d;
+}
+
+.stg.pass { background: #238636; color: #f0f6fc; }
+.stg.kill { background: #f85149; color: #f0f6fc; }
+.stg.recycle { background: #d29922; color: #0d1117; }
+.stg.pending { background: #21262d; color: #484f58; }
+
+.stg-outcome {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: #8b949e;
 }
 
 .diff-bar-container {

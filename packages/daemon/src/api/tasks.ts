@@ -25,6 +25,12 @@ tasksApi.get("/:id", (c) => {
   return c.json(task)
 })
 
+tasksApi.get("/:id/trace", (c) => {
+  const task = getTask(c.req.param("id"))
+  if (!task) return c.json({ error: "not found" }, 404)
+  return c.json(traceTask(task))
+})
+
 tasksApi.get("/:id/logs", (c) => {
   const logs = getTaskLogs(c.req.param("id"))
   return c.json(logs)
