@@ -38,10 +38,13 @@ export function getPipelineStats() {
     else break
   }
 
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+
   const tasksToday = d.prepare(`
     SELECT COUNT(*) AS cnt FROM tasks
-    WHERE status = 'done' AND finished_at >= date('now')
-  `).get() as { cnt: number }
+    WHERE status = 'done' AND finished_at >= ?
+  `).get(startOfToday) as { cnt: number }
 
   const activeImprovements = d.prepare(`
     SELECT COUNT(*) AS cnt FROM improvements WHERE status = 'active'
@@ -67,21 +70,27 @@ export function getCostStats() {
     FROM tasks WHERE cost_usd IS NOT NULL
   `).get() as { total_cost: number; total_tasks: number; avg_cost: number }
 
+  const now = new Date()
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
   const cost24h = d.prepare(`
     SELECT COALESCE(SUM(cost_usd), 0) AS cost
-    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > datetime('now', '-1 day')
-  `).get() as { cost: number }
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > ?
+  `).get(oneDayAgo) as { cost: number }
 
   const cost7d = d.prepare(`
     SELECT COALESCE(SUM(cost_usd), 0) AS cost
-    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > datetime('now', '-7 days')
-  `).get() as { cost: number }
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > ?
+  `).get(sevenDaysAgo) as { cost: number }
 
   const daily = d.prepare(`
-    SELECT date(finished_at) AS date, SUM(cost_usd) AS cost, COUNT(*) AS tasks
-    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > datetime('now', '-30 days')
-    GROUP BY date(finished_at) ORDER BY date ASC
-  `).all() as { date: string; cost: number; tasks: number }[]
+    SELECT date(substr(finished_at, 1, 19), 'localtime') AS date,
+           SUM(cost_usd) AS cost, COUNT(*) AS tasks
+    FROM tasks WHERE cost_usd IS NOT NULL AND finished_at > ?
+    GROUP BY date(substr(finished_at, 1, 19), 'localtime') ORDER BY date ASC
+  `).all(thirtyDaysAgo) as { date: string; cost: number; tasks: number }[]
 
   return {
     total_cost: total.total_cost,
