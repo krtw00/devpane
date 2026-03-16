@@ -1,10 +1,7 @@
+import { config } from "./config.js"
 import { emit } from "./events.js"
 
 export type CircuitState = "closed" | "open" | "half-open"
-
-const DEFAULT_THRESHOLD = 3
-const DEFAULT_BACKOFF_SEC = 300
-const MAX_BACKOFF_SEC = 3600
 
 export class CircuitBreaker {
   private state: CircuitState = "closed"
@@ -13,9 +10,9 @@ export class CircuitBreaker {
   private currentBackoff: number
 
   constructor(
-    private readonly threshold = DEFAULT_THRESHOLD,
-    private readonly initialBackoff = DEFAULT_BACKOFF_SEC,
-    private readonly maxBackoff = MAX_BACKOFF_SEC,
+    private readonly threshold = config.CB_THRESHOLD,
+    private readonly initialBackoff = config.CB_BACKOFF_SEC,
+    private readonly maxBackoff = config.CB_MAX_BACKOFF_SEC,
     private readonly clock: () => number = () => Date.now(),
   ) {
     this.currentBackoff = initialBackoff

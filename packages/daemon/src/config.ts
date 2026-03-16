@@ -46,6 +46,9 @@ export const config: Config = {
   BUILD_TIMEOUT_MS: Number(env("BUILD_TIMEOUT_MS", "120000")),
   TEST_TIMEOUT_MS: Number(env("TEST_TIMEOUT_MS", "120000")),
   LINT_TIMEOUT_MS: Number(env("LINT_TIMEOUT_MS", "60000")),
+  CB_THRESHOLD: Number(env("DEVPANE_CB_THRESHOLD", "3")),
+  CB_BACKOFF_SEC: Number(env("DEVPANE_CB_BACKOFF_SEC", "300")),
+  CB_MAX_BACKOFF_SEC: Number(env("DEVPANE_CB_MAX_BACKOFF_SEC", "3600")),
 }
 
 export function parseCmd(cmd: string): { bin: string; args: string[] } {
