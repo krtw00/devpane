@@ -1,5 +1,7 @@
 # DevPane
 
+[日本語](README.ja.md) | English
+
 Autonomous AI development daemon — PM, Worker, and Gate agents orchestrate TDD pipelines while you sleep.
 
 寝る前にデーモンを起動し、朝にDiscord日報を確認。ブラウザからチャットで介入できるAI自律開発環境。
