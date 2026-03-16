@@ -387,6 +387,8 @@ export async function executeTask(task: Task): Promise<void> {
             pullMain()
           } else {
             console.warn(`[scheduler] auto-merge failed for task ${task.id}, PR remains open`)
+            appendLog(task.id, "system", `[auto-merge] failed – PR remains open`)
+            emit({ type: "pr.merge_failed", taskId: task.id, url: prUrl })
           }
         } else {
           console.error(`[scheduler] PR creation failed for task ${task.id}`)
@@ -396,7 +398,8 @@ export async function executeTask(task: Task): Promise<void> {
 
       // finishTaskはPR作成の成否が確定した後に1回だけ呼ぶ
       if (prUrl) {
-        finishTask(task.id, "done", JSON.stringify(facts))
+        const resultPayload = prMerged ? facts : { ...facts, merged: false }
+        finishTask(task.id, "done", JSON.stringify(resultPayload))
         emit({ type: "task.completed", taskId: task.id, costUsd: result.cost_usd })
         broadcast("task:updated", { id: task.id, status: "done", result: facts })
       } else {
