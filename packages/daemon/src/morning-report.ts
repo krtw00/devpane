@@ -3,6 +3,7 @@ import { getPipelineStats } from "./db/stats.js"
 import { fetchOpenPrs, assessRisk, type PrReport } from "./pr-agent.js"
 import { getNotifier } from "./notifier-factory.js"
 import { traceTask, type PipelineTrace } from "./pipeline-trace.js"
+import { emit } from "./events.js"
 import type { ReportPayload, ReportSection } from "./notifier.js"
 import type { Task } from "@devpane/shared"
 
@@ -102,5 +103,11 @@ export async function sendMorningReport(shiftStartIso: string): Promise<void> {
   const report = formatReport(summary)
 
   console.log(`[morning-report] sending: ${summary.completed.length} done, ${summary.failed.length} failed, $${summary.totalCost.toFixed(2)}`)
-  await getNotifier().sendReport(report)
+  try {
+    await getNotifier().sendReport(report)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    emit({ type: "morning_report.failed", error: msg })
+    throw err
+  }
 }
