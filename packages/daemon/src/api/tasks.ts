@@ -1,7 +1,18 @@
 import { Hono } from "hono"
-import { getAllTasks, getTask, getTaskLogs, createTask, revertToPending } from "../db.js"
+import { getAllTasks, getTask, getTaskLogs, createTask, revertToPending, getTasksByStatus } from "../db.js"
+import { traceTask } from "../pipeline-trace.js"
 
 export const tasksApi = new Hono()
+
+tasksApi.get("/traces", (c) => {
+  const limit = 50
+  const doneTasks = getTasksByStatus("done")
+  const failedTasks = getTasksByStatus("failed")
+  const all = [...doneTasks, ...failedTasks]
+    .sort((a, b) => (b.finished_at ?? "").localeCompare(a.finished_at ?? ""))
+    .slice(0, limit)
+  return c.json(all.map(traceTask))
+})
 
 tasksApi.get("/", (c) => {
   const tasks = getAllTasks()

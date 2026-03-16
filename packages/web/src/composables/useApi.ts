@@ -86,6 +86,22 @@ export async function retryTask(id: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
+export type PipelineTrace = {
+  taskId: string
+  title: string
+  gate1: string
+  tester: string
+  gate2: string
+  worker: string
+  gate3: string
+  outcome: string
+  costUsd: number
+}
+
+export function fetchTaskTraces(): Promise<PipelineTrace[]> {
+  return fetchJson<PipelineTrace[]>('/tasks/traces')
+}
+
 export type CostStats = {
   total_cost: number
   total_tasks: number
