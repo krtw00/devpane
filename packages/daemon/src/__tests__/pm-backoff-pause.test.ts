@@ -106,6 +106,7 @@ vi.mock("../scheduler-plugins.js", () => ({
   resetKaizenCounter: vi.fn(),
   setKaizenCounter: vi.fn(),
   getKaizenCounter: vi.fn(() => 0),
+  parseConstraints: (raw: string | null) => { if (!raw) return []; try { const p = JSON.parse(raw); if (Array.isArray(p)) return p.filter((s: unknown): s is string => typeof s === "string"); } catch {} return [] },
 }))
 
 vi.mock("../discord.js", () => ({

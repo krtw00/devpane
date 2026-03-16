@@ -159,7 +159,7 @@ registerHook("task.completed", () => {
   }
 })
 
-function parseConstraints(raw: string | null): string[] {
+export function parseConstraints(raw: string | null): string[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)

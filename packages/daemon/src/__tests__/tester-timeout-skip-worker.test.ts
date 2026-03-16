@@ -32,6 +32,7 @@ vi.mock("../scheduler-plugins.js", () => ({
   setEffectMeasureCounter: vi.fn(),
   getEffectMeasureCounter: vi.fn(() => 0),
   getKaizenCounter: vi.fn(() => 0),
+  parseConstraints: (raw: string | null) => { if (!raw) return []; try { const p = JSON.parse(raw); if (Array.isArray(p)) return p.filter((s: unknown): s is string => typeof s === "string"); } catch {} return [] },
   KAIZEN_THRESHOLD: 10,
   checkKaizenAnalysis: vi.fn(),
   resetKaizenCounter: vi.fn(),

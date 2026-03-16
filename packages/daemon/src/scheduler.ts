@@ -18,6 +18,7 @@ import { remember } from "./memory.js"
 import { recordTaskMetrics } from "./spc.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
+import { parseConstraints } from "./scheduler-plugins.js"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -34,15 +35,6 @@ export function calculatePmBackoff(consecutiveFailures: number): number {
   if (cooldownCount <= 0) return PM_BACKOFF_BASE_SEC
   const backoff = PM_BACKOFF_BASE_SEC * Math.pow(2, cooldownCount - 1)
   return Math.min(backoff, PM_BACKOFF_MAX_SEC)
-}
-
-function parseConstraints(raw: string | null): string[] {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed.filter((s): s is string => typeof s === "string")
-  } catch { /* ignore malformed JSON */ }
-  return []
 }
 
 const RATE_LIMIT_PATTERNS = [
