@@ -115,11 +115,15 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
       }
     })
 
+    const STDERR_MAX = 10_240
     let stderr = ""
     proc.stderr.on("data", (chunk: Buffer) => {
       lastActivity = Date.now()
       const text = chunk.toString()
       stderr += text
+      if (stderr.length > STDERR_MAX) {
+        stderr = stderr.slice(stderr.length - STDERR_MAX)
+      }
       console.error(`[worker:${task.id.slice(0, 8)}:stderr] ${text.trimEnd()}`)
     })
 
