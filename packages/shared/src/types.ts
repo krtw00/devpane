@@ -139,4 +139,7 @@ export type Config = {
   BUILD_TIMEOUT_MS: number
   TEST_TIMEOUT_MS: number
   LINT_TIMEOUT_MS: number
+  CB_THRESHOLD: number
+  CB_BACKOFF_SEC: number
+  CB_MAX_BACKOFF_SEC: number
 }
