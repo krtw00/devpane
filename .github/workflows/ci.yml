@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, ai-develop]
   push:
-    branches: [main]
+    branches: [main, ai-develop]
 
 jobs:
   check:
@@ -31,7 +31,7 @@ jobs:
 
   deploy:
     needs: check
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/ai-develop' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd /opt/devpane
-            git pull --ff-only origin main
+            git pull --ff-only origin ai-develop
             pnpm install --frozen-lockfile
             pnpm build
             systemctl --user restart devpane.service
