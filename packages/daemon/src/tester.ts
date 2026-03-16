@@ -223,11 +223,13 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
     let stderr = ""
     proc.stderr.on("data", (chunk: Buffer) => {
       lastActivity = Date.now()
-      if (stderr.length < STDERR_MAX) {
-        stderr += chunk.toString()
-        if (stderr.length > STDERR_MAX) {
-          stderr = stderr.slice(0, STDERR_MAX)
-        }
+      const text = chunk.toString()
+      if (stderr.length + text.length <= STDERR_MAX) {
+        stderr += text
+      } else if (text.length >= STDERR_MAX) {
+        stderr = text.slice(-STDERR_MAX)
+      } else {
+        stderr = text
       }
     })
 
