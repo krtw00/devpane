@@ -12,6 +12,12 @@ let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 const connected = ref(false)
+const retryCount = ref(0)
+
+const BACKOFF_BASE = 3000
+const BACKOFF_MAX = 60000
+
+let backoffDelay = BACKOFF_BASE
 
 function getWsUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -25,6 +31,8 @@ function connect() {
 
   ws.onopen = () => {
     connected.value = true
+    backoffDelay = BACKOFF_BASE
+    retryCount.value = 0
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
@@ -34,7 +42,9 @@ function connect() {
   ws.onclose = () => {
     connected.value = false
     ws = null
-    reconnectTimer = setTimeout(connect, 3000)
+    retryCount.value++
+    reconnectTimer = setTimeout(connect, backoffDelay)
+    backoffDelay = Math.min(backoffDelay * 2, BACKOFF_MAX)
   }
 
   ws.onerror = () => {
@@ -59,7 +69,7 @@ export function useSocket() {
     connect()
   })
 
-  return { connected }
+  return { connected, retryCount }
 }
 
 export function onWsEvent(type: string, handler: Handler) {
