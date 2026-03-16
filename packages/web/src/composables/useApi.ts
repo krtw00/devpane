@@ -102,6 +102,10 @@ export function fetchTaskTraces(): Promise<PipelineTrace[]> {
   return fetchJson<PipelineTrace[]>('/tasks/traces')
 }
 
+export function fetchTaskTrace(id: string): Promise<PipelineTrace> {
+  return fetchJson<PipelineTrace>(`/tasks/${id}/trace`)
+}
+
 export type CostStats = {
   total_cost: number
   total_tasks: number
