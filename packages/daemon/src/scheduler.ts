@@ -577,7 +577,7 @@ export async function startScheduler(): Promise<void> {
     const openPrs = countOpenPrs()
     if (openPrs === null) {
       console.warn(`[scheduler] countOpenPrs failed, skipping task start for safety`)
-      await sleep(config.IDLE_INTERVAL_SEC * 1000)
+      for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
     if (openPrs >= config.MAX_OPEN_PRS) {
