@@ -53,17 +53,22 @@ function fetchJson<T>(path: string): Promise<T> {
 export function useTasks() {
   const tasks = ref<Task[]>([])
   const loading = ref(false)
+  const error = ref<string | null>(null)
 
   function refresh() {
     loading.value = true
     const p = fetchJson<Task[]>('/tasks')
-      .then(data => { tasks.value = data })
+      .then(data => { tasks.value = data; error.value = null })
+      .catch(err => {
+        error.value = err instanceof Error ? err.message : String(err)
+        throw err
+      })
       .finally(() => { loading.value = false })
     p.catch(() => {})
     return p
   }
 
-  return { tasks, loading, refresh }
+  return { tasks, loading, error, refresh }
 }
 
 export async function createTask(data: { title: string; description: string; priority: number }): Promise<Task> {
