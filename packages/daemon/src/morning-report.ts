@@ -52,22 +52,27 @@ function collectShiftData(since: string): ShiftSummary {
   }
   const traces = tasks.map(traceTask)
 
-  const d = getDb()
-  const goCount = d.prepare(`
-    SELECT COUNT(*) AS cnt FROM agent_events
-    WHERE type = 'gate.passed' AND json_extract(payload, '$.gate') = 'gate1'
-  `).get() as { cnt: number }
-  const killCount = d.prepare(`
-    SELECT COUNT(*) AS cnt FROM agent_events
-    WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
-      AND json_extract(payload, '$.verdict') = 'kill'
-  `).get() as { cnt: number }
-  const recycleCount = d.prepare(`
-    SELECT COUNT(*) AS cnt FROM agent_events
-    WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
-      AND json_extract(payload, '$.verdict') = 'recycle'
-  `).get() as { cnt: number }
-  const gate1Stats: Gate1Stats = { go: goCount.cnt, kill: killCount.cnt, recycle: recycleCount.cnt }
+  let gate1Stats: Gate1Stats = { go: 0, kill: 0, recycle: 0 }
+  try {
+    const d = getDb()
+    const goCount = d.prepare(`
+      SELECT COUNT(*) AS cnt FROM agent_events
+      WHERE type = 'gate.passed' AND json_extract(payload, '$.gate') = 'gate1'
+    `).get() as { cnt: number }
+    const killCount = d.prepare(`
+      SELECT COUNT(*) AS cnt FROM agent_events
+      WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
+        AND json_extract(payload, '$.verdict') = 'kill'
+    `).get() as { cnt: number }
+    const recycleCount = d.prepare(`
+      SELECT COUNT(*) AS cnt FROM agent_events
+      WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
+        AND json_extract(payload, '$.verdict') = 'recycle'
+    `).get() as { cnt: number }
+    gate1Stats = { go: goCount.cnt, kill: killCount.cnt, recycle: recycleCount.cnt }
+  } catch (err) {
+    console.warn("[morning-report] gate1Stats query failed, using defaults:", err)
+  }
 
   const now = new Date()
   const sinceDate = new Date(since)
