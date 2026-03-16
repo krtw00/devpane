@@ -1,4 +1,5 @@
 import { getTasksSince } from "./db.js"
+import { getDb } from "./db/core.js"
 import { getPipelineStats } from "./db/stats.js"
 import { fetchOpenPrs, assessRisk, type PrReport } from "./pr-agent.js"
 import { getNotifier } from "./notifier-factory.js"
@@ -6,6 +7,8 @@ import { traceTask, type PipelineTrace } from "./pipeline-trace.js"
 import { emit } from "./events.js"
 import type { ReportPayload, ReportSection } from "./notifier.js"
 import type { Task } from "@devpane/shared"
+
+type Gate1Stats = { go: number; kill: number; recycle: number }
 
 type ShiftSummary = {
   period: string
@@ -15,6 +18,7 @@ type ShiftSummary = {
   prReports: PrReport[]
   pipelineStats: ReturnType<typeof getPipelineStats>
   traces: PipelineTrace[]
+  gate1Stats?: Gate1Stats
 }
 
 function collectShiftData(since: string): ShiftSummary {
@@ -46,12 +50,29 @@ function collectShiftData(since: string): ShiftSummary {
   }
   const traces = tasks.map(traceTask)
 
+  const d = getDb()
+  const goCount = d.prepare(`
+    SELECT COUNT(*) AS cnt FROM agent_events
+    WHERE type = 'gate.passed' AND json_extract(payload, '$.gate') = 'gate1'
+  `).get() as { cnt: number }
+  const killCount = d.prepare(`
+    SELECT COUNT(*) AS cnt FROM agent_events
+    WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
+      AND json_extract(payload, '$.verdict') = 'kill'
+  `).get() as { cnt: number }
+  const recycleCount = d.prepare(`
+    SELECT COUNT(*) AS cnt FROM agent_events
+    WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
+      AND json_extract(payload, '$.verdict') = 'recycle'
+  `).get() as { cnt: number }
+  const gate1Stats: Gate1Stats = { go: goCount.cnt, kill: killCount.cnt, recycle: recycleCount.cnt }
+
   const now = new Date()
   const sinceDate = new Date(since)
   const hours = Math.round((now.getTime() - sinceDate.getTime()) / 3600000 * 10) / 10
   const period = `${hours}h`
 
-  return { period, completed, failed, totalCost, prReports, pipelineStats, traces }
+  return { period, completed, failed, totalCost, prReports, pipelineStats, traces, gate1Stats }
 }
 
 
@@ -77,7 +98,7 @@ function formatTracesSection(traces: PipelineTrace[]): string {
 }
 
 export function formatReport(summary: ShiftSummary): ReportPayload {
-  const { period, completed, failed, totalCost, prReports, pipelineStats, traces } = summary
+  const { period, completed, failed, totalCost, prReports, pipelineStats, traces, gate1Stats } = summary
 
   const total = completed.length + failed.length
   const successRate = total > 0 ? Math.round(completed.length / total * 100) : 0
@@ -100,6 +121,15 @@ export function formatReport(summary: ShiftSummary): ReportPayload {
       return `${icon} #${r.pr.number} ${r.pr.title} (+${r.pr.additions}/-${r.pr.deletions})`
     })
     sections.push({ heading: "未マージPR", body: prLines.join("\n") })
+  }
+
+  const g1 = gate1Stats ?? { go: 0, kill: 0, recycle: 0 }
+  const gate1Total = g1.go + g1.kill + g1.recycle
+  if (gate1Total > 0) {
+    sections.push({
+      heading: "Gate1",
+      body: `go ${g1.go} / kill ${g1.kill} / recycle ${g1.recycle}`,
+    })
   }
 
   sections.push({
