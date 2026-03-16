@@ -79,11 +79,19 @@ describe("classifyRootCause", () => {
     expect(classifyRootCause(facts, ["tests failed: 2"])).toBe("test_gap")
   })
 
-  it("returns scope_creep when lint errors exist", () => {
+  it("returns code_quality when lint errors exist", () => {
     const facts = makeFacts({
       lint_result: { errors: 3, exit_code: 1 },
     })
-    expect(classifyRootCause(facts, ["lint errors: 3"])).toBe("scope_creep")
+    expect(classifyRootCause(facts, ["lint errors: 3"])).toBe("code_quality")
+  })
+
+  it("returns code_quality (not scope_creep) for lint-only failures", () => {
+    const facts = makeFacts({
+      lint_result: { errors: 1, exit_code: 1 },
+    })
+    expect(classifyRootCause(facts, ["lint errors: 1"])).not.toBe("scope_creep")
+    expect(classifyRootCause(facts, ["lint errors: 1"])).toBe("code_quality")
   })
 
   it("returns scope_creep when diff is oversized", () => {

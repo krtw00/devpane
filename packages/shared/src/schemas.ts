@@ -21,6 +21,7 @@ export const RootCause = z.enum([
   "spec_ambiguity",
   "test_gap",
   "scope_creep",
+  "code_quality",
   "api_misuse",
   "env_issue",
   "regression",

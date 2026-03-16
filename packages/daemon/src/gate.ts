@@ -80,7 +80,7 @@ export function runGate3(taskId: string, facts: ObservableFacts): Gate3Result {
 export function classifyRootCause(facts: ObservableFacts, reasons: string[]): RootCauseType {
   if (facts.test_result?.timed_out) return "env_issue"
   if (facts.test_result?.failed && facts.test_result.failed > 0) return "test_gap"
-  if (facts.lint_result?.errors && facts.lint_result.errors > 0) return "scope_creep"
+  if (facts.lint_result?.errors && facts.lint_result.errors > 0) return "code_quality"
   const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
   if (diffSize > config.MAX_DIFF_SIZE) return "scope_creep"
   if (reasons.some(r => /timeout/i.test(r))) return "env_issue"

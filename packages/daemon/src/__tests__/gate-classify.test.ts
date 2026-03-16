@@ -37,18 +37,18 @@ describe("classifyRootCause — exhaustive branch coverage", () => {
 
   // --- lint_error detection ---
   describe("lint_error detection", () => {
-    it("returns scope_creep when lint_result has errors", () => {
+    it("returns code_quality when lint_result has errors", () => {
       const facts = makeFacts({
         lint_result: { errors: 5, exit_code: 1 },
       })
-      expect(classifyRootCause(facts, ["lint errors: 5"])).toBe("scope_creep")
+      expect(classifyRootCause(facts, ["lint errors: 5"])).toBe("code_quality")
     })
 
     it("does not trigger for lint_result with zero errors", () => {
       const facts = makeFacts({
         lint_result: { errors: 0, exit_code: 0 },
       })
-      expect(classifyRootCause(facts, [])).not.toBe("scope_creep")
+      expect(classifyRootCause(facts, [])).not.toBe("code_quality")
     })
   })
 
@@ -142,7 +142,7 @@ describe("classifyRootCause — exhaustive branch coverage", () => {
         lint_result: { errors: 1, exit_code: 1 },
         diff_stats: { additions: config.MAX_DIFF_SIZE + 100, deletions: 0 },
       })
-      expect(classifyRootCause(facts, [])).toBe("scope_creep")
+      expect(classifyRootCause(facts, [])).toBe("code_quality")
     })
 
     it("diff_size takes priority over timeout in reasons (when no timed_out flag)", () => {

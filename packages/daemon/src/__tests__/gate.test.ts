@@ -53,7 +53,7 @@ describe("Gate 3", () => {
       lint_result: { errors: 3, exit_code: 1 },
     }))
     expect(result.verdict).toBe("recycle")
-    expect(result.failure?.root_cause).toBe("scope_creep")
+    expect(result.failure?.root_cause).toBe("code_quality")
   })
 
   it("recycles task with oversized diff", () => {
