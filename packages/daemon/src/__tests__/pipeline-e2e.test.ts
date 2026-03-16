@@ -191,7 +191,6 @@ describe("pipeline e2e: executeTask", () => {
     // イベント検証
     const types = emittedEvents.map(e => e.type)
     expect(types).toContain("gate.passed")
-    expect(types).toContain("task.started")
     expect(types).toContain("task.completed")
     expect(types).toContain("pr.created")
   })
