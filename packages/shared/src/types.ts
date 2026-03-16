@@ -39,6 +39,7 @@ export type ObservableFacts = {
     errors: number
     exit_code: number
   }
+  build_failed?: boolean
   branch: string
   commit_hash?: string
 }
