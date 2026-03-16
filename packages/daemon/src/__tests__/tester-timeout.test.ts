@@ -14,7 +14,7 @@ vi.mock("../events.js", () => ({
 
 vi.mock("../config.js", () => ({
   config: {
-    WORKER_TIMEOUT_MS: 5_000, // short timeout for tests
+    TESTER_TIMEOUT_MS: 5_000, // short timeout for tests
   },
 }))
 
