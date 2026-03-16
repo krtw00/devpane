@@ -24,10 +24,26 @@ function collectShiftData(since: string): ShiftSummary {
 
   const totalCost = tasks.reduce((sum, t) => sum + (t.cost_usd ?? 0), 0)
 
-  const prs = fetchOpenPrs()
-  const prReports = prs.map(assessRisk)
+  let prReports: PrReport[] = []
+  try {
+    const prs = fetchOpenPrs()
+    prReports = prs.map(assessRisk)
+  } catch (err) {
+    console.warn("[morning-report] fetchOpenPrs failed, using empty fallback:", err)
+  }
 
-  const pipelineStats = getPipelineStats()
+  let pipelineStats: ReturnType<typeof getPipelineStats> = {
+    gate3_pass_rate: 0,
+    avg_execution_time: 0,
+    consecutive_failures: 0,
+    tasks_today: 0,
+    active_improvements: 0,
+  }
+  try {
+    pipelineStats = getPipelineStats()
+  } catch (err) {
+    console.warn("[morning-report] getPipelineStats failed, using defaults:", err)
+  }
   const traces = tasks.map(traceTask)
 
   const now = new Date()
