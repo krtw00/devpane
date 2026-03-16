@@ -110,6 +110,7 @@ export type Config = {
   APP_NAME: string
   PROJECT_ROOT: string
   WORKER_TIMEOUT_MS: number
+  TESTER_TIMEOUT_MS: number
   PM_TIMEOUT_MS: number
   IDLE_INTERVAL_SEC: number
   PM_RETRY_INTERVAL_SEC: number

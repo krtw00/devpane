@@ -236,9 +236,9 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
     let timedOut = false
     let sigkillCheck: ReturnType<typeof setInterval> | undefined
     const idleCheck = setInterval(() => {
-      if (Date.now() - lastActivity > config.WORKER_TIMEOUT_MS) {
+      if (Date.now() - lastActivity > config.TESTER_TIMEOUT_MS) {
         timedOut = true
-        appendLog(taskId ?? "tester", "tester", `[timeout] no activity for ${config.WORKER_TIMEOUT_MS / 1000}s, killing`)
+        appendLog(taskId ?? "tester", "tester", `[timeout] no activity for ${config.TESTER_TIMEOUT_MS / 1000}s, killing`)
         proc.kill("SIGTERM")
         clearInterval(idleCheck)
 

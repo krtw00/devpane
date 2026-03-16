@@ -99,6 +99,21 @@ describe("config env overrides", () => {
     vi.unstubAllEnvs()
   })
 
+  // --- TESTER_TIMEOUT_MS ---
+
+  it("uses default TESTER_TIMEOUT_MS=300000 when env not set", async () => {
+    delete process.env.TESTER_TIMEOUT_MS
+    const config = await loadConfig()
+    expect(config.TESTER_TIMEOUT_MS).toBe(300000)
+  })
+
+  it("overrides TESTER_TIMEOUT_MS from TESTER_TIMEOUT_MS env", async () => {
+    vi.stubEnv("TESTER_TIMEOUT_MS", "120000")
+    const config = await loadConfig()
+    expect(config.TESTER_TIMEOUT_MS).toBe(120000)
+    vi.unstubAllEnvs()
+  })
+
   // --- MEMORY_CLEANUP_THRESHOLD ---
 
   it("uses default MEMORY_CLEANUP_THRESHOLD=10 when env not set", async () => {
