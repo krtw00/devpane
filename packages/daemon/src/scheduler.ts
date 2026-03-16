@@ -368,7 +368,6 @@ export async function executeTask(task: Task): Promise<void> {
       }
     } else {
       // Gate 3 passed → PR作成
-      emit({ type: "task.started", taskId: task.id, workerId })
       emit({ type: "gate.passed", taskId: task.id, gate: "gate3" })
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
