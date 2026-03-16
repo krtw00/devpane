@@ -136,4 +136,7 @@ export type Config = {
   TEST_FILE_PATTERN: string
   TEST_FRAMEWORK: string
   PR_MERGE_STRATEGY: string
+  BUILD_TIMEOUT_MS: number
+  TEST_TIMEOUT_MS: number
+  LINT_TIMEOUT_MS: number
 }

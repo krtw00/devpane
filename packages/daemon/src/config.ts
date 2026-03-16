@@ -43,6 +43,9 @@ export const config: Config = {
   TEST_FILE_PATTERN: env("DEVPANE_TEST_FILE_PATTERN", "*.test.ts"),
   TEST_FRAMEWORK: env("DEVPANE_TEST_FRAMEWORK", "vitest"),
   PR_MERGE_STRATEGY: env("DEVPANE_PR_MERGE_STRATEGY", "--merge"),
+  BUILD_TIMEOUT_MS: Number(env("BUILD_TIMEOUT_MS", "120000")),
+  TEST_TIMEOUT_MS: Number(env("TEST_TIMEOUT_MS", "120000")),
+  LINT_TIMEOUT_MS: Number(env("LINT_TIMEOUT_MS", "60000")),
 }
 
 export function parseCmd(cmd: string): { bin: string; args: string[] } {
