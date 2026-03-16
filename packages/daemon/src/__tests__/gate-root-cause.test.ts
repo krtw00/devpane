@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest"
-import { classifyRootCause } from "../gate.js"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { classifyRootCause, runGate3 } from "../gate.js"
+import { initDb, closeDb } from "../db.js"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { ObservableFacts } from "@devpane/shared"
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
 function makeFacts(overrides: Partial<ObservableFacts> = {}): ObservableFacts {
   return {
@@ -12,6 +18,46 @@ function makeFacts(overrides: Partial<ObservableFacts> = {}): ObservableFacts {
     ...overrides,
   }
 }
+
+describe("gates_passed in StructuredFailure", () => {
+  beforeEach(() => {
+    initDb(":memory:", migrationsDir)
+  })
+
+  afterEach(() => {
+    closeDb()
+  })
+
+  it("kill時のgates_passedはgate1とgate2を含む", () => {
+    const result = runGate3("test-gp-1", makeFacts({ exit_code: 1 }))
+    expect(result.verdict).toBe("kill")
+    expect(result.failure).toBeDefined()
+    expect(result.failure!.gates_passed).toEqual(["gate1", "gate2"])
+  })
+
+  it("recycle時のgates_passedはgate1とgate2を含む", () => {
+    const result = runGate3("test-gp-2", makeFacts({
+      test_result: { passed: 5, failed: 2, exit_code: 1 },
+    }))
+    expect(result.verdict).toBe("recycle")
+    expect(result.failure).toBeDefined()
+    expect(result.failure!.gates_passed).toEqual(["gate1", "gate2"])
+  })
+
+  it("gates_passedにgate3を含まない（gate3自体はfailしているため）", () => {
+    const result = runGate3("test-gp-3", makeFacts({
+      lint_result: { errors: 3, exit_code: 1 },
+    }))
+    expect(result.failure).toBeDefined()
+    expect(result.failure!.gates_passed).not.toContain("gate3")
+  })
+
+  it("go時はfailureがundefined", () => {
+    const result = runGate3("test-gp-4", makeFacts())
+    expect(result.verdict).toBe("go")
+    expect(result.failure).toBeUndefined()
+  })
+})
 
 describe("classifyRootCause", () => {
   it("returns env_issue when reasons contain timeout and commit_hash is empty", () => {

@@ -69,7 +69,7 @@ export function runGate3(taskId: string, facts: ObservableFacts): Gate3Result {
       stage: "gate3",
       root_cause: classifyRootCause(facts, reasons),
       why_chain: reasons,
-      gates_passed: ["gate3"],
+      gates_passed: ["gate1", "gate2"],
       severity: verdict === "kill" ? "critical" : "process_gap",
     }
   }
