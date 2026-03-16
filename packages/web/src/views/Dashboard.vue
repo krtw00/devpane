@@ -345,7 +345,7 @@ async function send() {
       <div class="feed-panel">
         <div class="feed-hdr">イベントフィード</div>
         <div class="feed-log">
-          <div v-for="(e, i) in recentEvents" :key="i" class="feed-item" :class="e.type.includes('failed') || e.type.includes('rejected') ? 'bad' : ''">
+          <div v-for="e in recentEvents" :key="e.id" class="feed-item" :class="e.type.includes('failed') || e.type.includes('rejected') ? 'bad' : ''">
             <span class="feed-icon">{{ eventIcon(e.type) }}</span>
             <span class="feed-text">{{ eventSummary(e) }}</span>
           </div>

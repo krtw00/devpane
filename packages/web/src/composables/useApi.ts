@@ -134,6 +134,7 @@ export function fetchPipelineStats(): Promise<PipelineStats> {
 }
 
 export type AgentEvent = {
+  id: string
   type: string
   taskId?: string
   [key: string]: unknown
