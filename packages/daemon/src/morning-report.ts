@@ -41,6 +41,8 @@ function collectShiftData(since: string): ShiftSummary {
     avg_execution_time: 0,
     consecutive_failures: 0,
     tasks_today: 0,
+    tasks_today_done: 0,
+    tasks_today_failed: 0,
     active_improvements: 0,
   }
   try {
