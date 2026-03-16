@@ -88,6 +88,10 @@ See [design docs](design/00-index.md) for detailed architecture.
 - **Blackboard as truth** — SQLite is the single source of truth for all agent state
 - **Contracts at boundaries** — Zod schemas validate all inputs/outputs
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, branch strategy, and PR guidelines.
+
 ## License
 
 MIT

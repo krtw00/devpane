@@ -1,0 +1,27 @@
+name: Bug Report / バグ報告
+description: Report a bug / バグを報告する
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description / 概要
+      description: What happened? / 何が起きたか
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 期待する動作
+      description: What did you expect? / どうなるべきだったか
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 再現手順
+      description: How to reproduce the issue / どうすれば再現できるか
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 環境
+      description: Node version, OS, etc.
+      placeholder: "Node.js v22, Arch Linux"

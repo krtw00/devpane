@@ -1,0 +1,21 @@
+name: Feature Request / 機能要望
+description: Suggest a feature / 機能を提案する
+labels: [enhancement]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description / 概要
+      description: What feature do you want? / どんな機能がほしいか
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation / 動機
+      description: Why is this needed? / なぜ必要か
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / 検討した代替案
+      description: Other approaches you considered / 他に検討したアプローチ
