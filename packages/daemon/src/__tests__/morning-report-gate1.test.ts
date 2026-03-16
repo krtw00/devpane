@@ -5,12 +5,14 @@ import { fileURLToPath } from "node:url"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
+const mockNotifier = {
+  sendMessage: vi.fn().mockResolvedValue(undefined),
+  sendReport: vi.fn().mockResolvedValue(undefined),
+  notify: vi.fn().mockResolvedValue(undefined),
+}
+
 vi.mock("../notifier-factory.js", () => ({
-  getNotifier: () => ({
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    sendReport: vi.fn().mockResolvedValue(undefined),
-    notify: vi.fn().mockResolvedValue(undefined),
-  }),
+  getNotifier: () => mockNotifier,
 }))
 
 vi.mock("../pr-agent.js", () => ({
@@ -22,6 +24,7 @@ describe("morning-report gate1 stats", () => {
   beforeEach(async () => {
     const { initDb } = await import("../db.js")
     initDb(":memory:", migrationsDir)
+    mockNotifier.sendReport.mockClear()
   })
 
   afterEach(async () => {
