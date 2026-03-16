@@ -96,6 +96,7 @@ export const AgentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("improvement.reverted"), improvementId: z.string(), reason: z.string() }),
   z.object({ type: z.literal("pr.created"), taskId: z.string(), url: z.string() }),
   z.object({ type: z.literal("pr.failed"), taskId: z.string() }),
+  z.object({ type: z.literal("pr.merge_failed"), taskId: z.string(), url: z.string() }),
   z.object({ type: z.literal("spc.alert"), metric: z.string(), value: z.number(), ucl: z.number() }),
   z.object({ type: z.literal("gate.llm_fallback"), taskId: z.string(), gate: PipelineStage, error: z.string() }),
   z.object({ type: z.literal("scheduler.outside_hours") }),
