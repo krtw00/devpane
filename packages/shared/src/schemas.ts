@@ -98,6 +98,7 @@ export const AgentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("spc.alert"), metric: z.string(), value: z.number(), ucl: z.number() }),
   z.object({ type: z.literal("gate.llm_fallback"), taskId: z.string(), gate: PipelineStage, error: z.string() }),
   z.object({ type: z.literal("scheduler.outside_hours") }),
+  z.object({ type: z.literal("morning_report.failed"), error: z.string() }),
 ])
 
 // --- Type exports ---

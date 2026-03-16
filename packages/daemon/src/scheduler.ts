@@ -490,7 +490,9 @@ function startDailyReportTimer(): void {
     if (wasWithinHours && !withinHours && shiftStartIso) {
       console.log("[scheduler] shift ended, sending morning report")
       sendMorningReport(shiftStartIso).catch((err) => {
-        console.error(`[scheduler] morning report failed: ${err instanceof Error ? err.message : String(err)}`)
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[scheduler] morning report failed: ${msg}`)
+        emit({ type: "morning_report.failed", error: msg })
       })
       shiftStartIso = null
     }
