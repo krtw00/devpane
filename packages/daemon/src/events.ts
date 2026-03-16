@@ -1,6 +1,6 @@
 import type { AgentEvent } from "@devpane/shared/schemas"
 import { AgentEventSchema } from "@devpane/shared/schemas"
-import { insertAgentEvent, getAgentEvents, getDb } from "./db.js"
+import { insertAgentEvent, getAgentEvents, getEventsByTaskId, getDb } from "./db.js"
 import { broadcast } from "./ws.js"
 import { getNotifier } from "./notifier-factory.js"
 
@@ -35,6 +35,12 @@ export function queryEventsByType(type: AgentEvent["type"], limit = 50): AgentEv
 
 export function queryRecentEvents(limit = 100): AgentEvent[] {
   return getAgentEvents({ limit })
+}
+
+export function queryEventsByTaskId(taskId: string, type?: AgentEvent["type"], limit = 100): AgentEvent[] {
+  let events = getEventsByTaskId(taskId)
+  if (type) events = events.filter(e => e.type === type)
+  return events.slice(0, limit)
 }
 
 type StoredEvent = { id: string; type: string; payload: string; timestamp: string }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useTaskDetail, fetchEvents, fetchTaskTrace, retryTask, type AgentEvent, type PipelineTrace } from '../composables/useApi'
+import { useTaskDetail, fetchEvents, fetchTaskTrace, retryTask, type PipelineTrace } from '../composables/useApi'
 import { ref } from 'vue'
 
 const props = defineProps<{ id: string }>()
@@ -27,8 +27,8 @@ const prUrl = ref<string | null>(null)
 
 async function loadPrUrl() {
   try {
-    const events = await fetchEvents(500, 'pr.created')
-    const match = events.find((e: AgentEvent) => e.taskId === props.id)
+    const events = await fetchEvents(10, 'pr.created', props.id)
+    const match = events[0]
     if (match && typeof match.url === 'string') prUrl.value = match.url
   } catch {}
 }

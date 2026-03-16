@@ -139,9 +139,10 @@ export type AgentEvent = {
   [key: string]: unknown
 }
 
-export async function fetchEvents(limit = 100, type?: string): Promise<AgentEvent[]> {
+export async function fetchEvents(limit = 100, type?: string, taskId?: string): Promise<AgentEvent[]> {
   const params = new URLSearchParams({ limit: String(limit) })
   if (type) params.set('type', type)
+  if (taskId) params.set('taskId', taskId)
   return fetchJson<AgentEvent[]>(`/events?${params}`)
 }
 
