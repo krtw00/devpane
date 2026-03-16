@@ -73,8 +73,12 @@ export function updateTaskCost(id: string, costUsd: number, tokensUsed: number):
 }
 
 export function appendLog(taskId: string, agent: string, message: string): void {
-  const id = ulid()
-  getDb().prepare(`INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)`).run(id, taskId, agent, message, new Date().toISOString())
+  try {
+    const id = ulid()
+    getDb().prepare(`INSERT INTO task_logs (id, task_id, agent, message, timestamp) VALUES (?, ?, ?, ?, ?)`).run(id, taskId, agent, message, new Date().toISOString())
+  } catch (err) {
+    console.warn(`[appendLog] failed for task ${taskId}:`, err)
+  }
 }
 
 export function getTaskLogs(taskId: string): TaskLog[] {
