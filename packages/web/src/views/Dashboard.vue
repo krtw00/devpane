@@ -233,7 +233,7 @@ async function send() {
         <div class="stats-bar">
           <template v-if="pipeline">
             <span class="stat">G3通過率: {{ Math.round((pipeline.gate3_pass_rate ?? 0) * 100) }}%</span>
-            <span class="stat">本日: {{ pipeline.tasks_today ?? 0 }}件</span>
+            <span class="stat">完了 {{ pipeline.tasks_today_done ?? 0 }} / 失敗 {{ pipeline.tasks_today_failed ?? 0 }}</span>
             <span class="stat fail" v-if="pipeline.consecutive_failures > 0">連続失敗: {{ pipeline.consecutive_failures }}</span>
           </template>
           <span class="stat warn" v-if="scheduler?.rateLimitHits">RL: {{ scheduler.rateLimitHits }}回</span>

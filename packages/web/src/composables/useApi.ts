@@ -124,6 +124,8 @@ export type PipelineStats = {
   avg_execution_time: number
   consecutive_failures: number
   tasks_today: number
+  tasks_today_done: number
+  tasks_today_failed: number
   active_improvements: number
 }
 

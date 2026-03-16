@@ -42,9 +42,13 @@ export function getPipelineStats() {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
 
   const tasksToday = d.prepare(`
-    SELECT COUNT(*) AS cnt FROM tasks
-    WHERE status = 'done' AND finished_at >= ?
-  `).get(startOfToday) as { cnt: number }
+    SELECT
+      COUNT(*) AS cnt,
+      COUNT(*) FILTER (WHERE status = 'done') AS done_cnt,
+      COUNT(*) FILTER (WHERE status = 'failed') AS failed_cnt
+    FROM tasks
+    WHERE status IN ('done', 'failed') AND finished_at >= ?
+  `).get(startOfToday) as { cnt: number; done_cnt: number; failed_cnt: number }
 
   const activeImprovements = d.prepare(`
     SELECT COUNT(*) AS cnt FROM improvements WHERE status = 'active'
@@ -56,6 +60,8 @@ export function getPipelineStats() {
     avg_execution_time: Math.round(avgExec.avg_sec),
     consecutive_failures,
     tasks_today: tasksToday.cnt,
+    tasks_today_done: tasksToday.done_cnt,
+    tasks_today_failed: tasksToday.failed_cnt,
     active_improvements: activeImprovements.cnt,
   }
 }
