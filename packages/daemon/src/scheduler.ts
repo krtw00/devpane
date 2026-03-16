@@ -491,7 +491,6 @@ function startDailyReportTimer(): void {
       sendMorningReport(shiftStartIso).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`[scheduler] morning report failed: ${msg}`)
-        emit({ type: "morning_report.failed", error: msg })
       })
       shiftStartIso = null
     }
