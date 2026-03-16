@@ -76,7 +76,16 @@ Respond with ONLY the JSON object, no markdown fences or explanation.`
   try {
     const output = await spawnClaude(["-p", prompt, "--output-format", "json"], config.PROJECT_ROOT, CLAUDE_TIMEOUT_MS)
 
-    const cleaned = stripMarkdownFences(output)
+    // --output-format json ラッパー {"result": "...", "total_cost_usd": ...} を剥がす
+    let inner: string
+    try {
+      const json = JSON.parse(output)
+      inner = json.result ?? output
+    } catch {
+      inner = output
+    }
+
+    const cleaned = stripMarkdownFences(inner)
     const parsed = JSON.parse(cleaned)
     const result = WhyWhyAnalysisSchema.safeParse(parsed)
     if (!result.success) {
