@@ -23,7 +23,7 @@ export function collectFacts(
     execFileSync(build.bin, build.args, {
       cwd: worktreePath,
       encoding: "utf-8",
-      timeout: 120000,
+      timeout: config.BUILD_TIMEOUT_MS,
     })
   } catch (e) {
     buildFailed = true
@@ -42,7 +42,7 @@ export function collectFacts(
       const result = execFileSync(test.bin, test.args, {
         cwd: worktreePath,
         encoding: "utf-8",
-        timeout: 120000,
+        timeout: config.TEST_TIMEOUT_MS,
       })
       const passMatch = result.match(/(\d+)\s+pass/i)
       const failMatch = result.match(/(\d+)\s+fail/i)
@@ -80,7 +80,7 @@ export function collectFacts(
       const result = execFileSync(lint.bin, lint.args, {
         cwd: worktreePath,
         encoding: "utf-8",
-        timeout: 60000,
+        timeout: config.LINT_TIMEOUT_MS,
       })
       // Count error lines from typical lint output
       const errorMatch = result.match(/(\d+)\s+errors?/i)
