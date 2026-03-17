@@ -18,6 +18,6 @@ rsync -az --delete \
   ./ "${HOST}:${REMOTE_DIR}/"
 
 # Rebuild and restart on remote
-ssh "${HOST}" "cd ${REMOTE_DIR} && docker compose up --build -d"
+ssh "${HOST}" "cd ${REMOTE_DIR} && pnpm install --frozen-lockfile && pnpm build && systemctl --user restart devpane.service"
 
 echo "==> Deploy complete"

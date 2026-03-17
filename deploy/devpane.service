@@ -1,16 +1,21 @@
 [Unit]
 Description=DevPane autonomous development daemon
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/devpane
-ExecStart=/usr/bin/docker compose up --build
-ExecStop=/usr/bin/docker compose down
-Restart=always
+ExecStartPre=/usr/bin/env pnpm install --frozen-lockfile
+ExecStartPre=/usr/bin/env pnpm build
+ExecStart=/usr/bin/env node packages/daemon/dist/index.js
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/devpane/.env
+Restart=on-failure
 RestartSec=10
-EnvironmentFile=/opt/devpane/.env
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
 
 [Install]
 WantedBy=default.target
