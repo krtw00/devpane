@@ -6,10 +6,11 @@ import { config } from "./config.js"
 import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask, appendLog } from "./db.js"
 import { broadcast } from "./ws.js"
 import { recall } from "./memory.js"
-import { killAllClaude } from "./claude.js"
 import { callLlm } from "./llm-bridge.js"
 
-export const killAllPm = killAllClaude
+export function killAllPm(): void {
+  // No-op: API mode does not spawn child processes
+}
 
 type PmContext = {
   claudeMd: string
@@ -160,7 +161,7 @@ export async function runPm(): Promise<PmOutput> {
 
   const prompt = buildPmPrompt(context)
 
-  console.log(`[pm] generating tasks... (prompt: ${prompt.length} chars, timeout: ${config.PM_TIMEOUT_MS}ms, backend: ${config.LLM_BACKEND})`)
+  console.log(`[pm] generating tasks... (prompt: ${prompt.length} chars, timeout: ${config.PM_TIMEOUT_MS}ms)`)
 
   const bridgeResult = await callLlm(prompt, config.PROJECT_ROOT, config.PM_TIMEOUT_MS)
 

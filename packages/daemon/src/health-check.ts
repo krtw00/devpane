@@ -40,12 +40,9 @@ function runCheck(
 }
 
 export function runCredentialHealthChecks(): CredentialHealthCheck[] {
-  const cliBin = config.CLI_BACKEND === "codex" ? "codex" : "claude"
-
   return [
     runCheck("gh auth status", "gh", ["auth", "status"], "GitHub CLI auth OK"),
     runCheck("git ls-remote --exit-code origin HEAD", "git", ["ls-remote", "--exit-code", "origin", "HEAD"], "Git auth OK", config.PROJECT_ROOT),
-    runCheck(`${cliBin} --version`, cliBin, ["--version"], `${cliBin} CLI available`),
   ]
 }
 

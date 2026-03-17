@@ -7,9 +7,9 @@ import { config } from "../config.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
-const mockSpawnClaude = vi.fn()
-vi.mock("../claude.js", () => ({
-  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
 }))
 
 function createFailedTask() {
@@ -44,28 +44,28 @@ describe("kaizen analyze() - cwd argument", () => {
   })
 
   it("passes config.PROJECT_ROOT as cwd, not relative path", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+    mockCallLlm.mockResolvedValue({ text: VALID_ANALYSIS, cost_usd: 0, tokens_used: 0 })
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
-    const callArgs = mockSpawnClaude.mock.calls[0]
-    // Second argument is cwd — should be config.PROJECT_ROOT, not "."
+    expect(mockCallLlm).toHaveBeenCalledOnce()
+    const callArgs = mockCallLlm.mock.calls[0]
+    // callLlm(prompt, cwd, timeoutMs) — second argument is cwd
     const cwd = callArgs[1]
     expect(cwd).toBe(config.PROJECT_ROOT)
     expect(cwd).not.toBe(".")
   })
 
   it("uses absolute path as cwd", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+    mockCallLlm.mockResolvedValue({ text: VALID_ANALYSIS, cost_usd: 0, tokens_used: 0 })
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     await analyze()
 
-    const callArgs = mockSpawnClaude.mock.calls[0]
+    const callArgs = mockCallLlm.mock.calls[0]
     const cwd: string = callArgs[1]
     // cwd should be an absolute path, not a relative one
     expect(cwd.startsWith("/")).toBe(true)

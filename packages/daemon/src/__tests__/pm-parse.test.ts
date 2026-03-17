@@ -8,10 +8,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
 // Mock external dependencies for runPm tests
-const mockSpawnClaude = vi.fn()
-vi.mock("../claude.js", () => ({
-  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
-  killAllClaude: vi.fn(),
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
 }))
 vi.mock("../ws.js", () => ({
   broadcast: vi.fn(),
@@ -84,7 +83,7 @@ describe("buildPmPrompt - failed task with invalid JSON result", () => {
 
   it("does not crash when failed task result is invalid JSON", async () => {
     createFailedTaskWithResult("THIS IS NOT VALID JSON")
-    mockSpawnClaude.mockResolvedValue(VALID_PM_RESPONSE)
+    mockCallLlm.mockResolvedValue({ text: VALID_PM_RESPONSE, cost_usd: 0, tokens_used: 0 })
 
     const { runPm } = await import("../pm.js")
     const result = await runPm()
@@ -95,7 +94,7 @@ describe("buildPmPrompt - failed task with invalid JSON result", () => {
 
   it("does not crash when failed task result is partially valid JSON", async () => {
     createFailedTaskWithResult("{invalid json with brace")
-    mockSpawnClaude.mockResolvedValue(VALID_PM_RESPONSE)
+    mockCallLlm.mockResolvedValue({ text: VALID_PM_RESPONSE, cost_usd: 0, tokens_used: 0 })
 
     const { runPm } = await import("../pm.js")
     const result = await runPm()
@@ -105,14 +104,13 @@ describe("buildPmPrompt - failed task with invalid JSON result", () => {
 
   it("includes failed task title in prompt even with invalid result", async () => {
     createFailedTaskWithResult("NOT JSON")
-    mockSpawnClaude.mockResolvedValue(VALID_PM_RESPONSE)
+    mockCallLlm.mockResolvedValue({ text: VALID_PM_RESPONSE, cost_usd: 0, tokens_used: 0 })
 
     const { runPm } = await import("../pm.js")
     await runPm()
 
-    const [args] = mockSpawnClaude.mock.calls[0]
-    const promptIdx = args.indexOf("-p")
-    const prompt: string = args[promptIdx + 1]
+    // callLlm(prompt, cwd, timeoutMs)
+    const [prompt] = mockCallLlm.mock.calls[0]
     expect(prompt).toContain("broken task")
     expect(prompt).toContain("[failed]")
   })

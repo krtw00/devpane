@@ -6,10 +6,10 @@ import { initDb, closeDb, getDb, createTask, startTask } from "../db.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
-// Mock spawnClaude to simulate claude CLI
-const mockSpawnClaude = vi.fn()
-vi.mock("../claude.js", () => ({
-  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
+// Mock callLlm to simulate LLM API
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
 }))
 
 function createFailedTask() {
@@ -63,6 +63,10 @@ const INVALID_ANALYSIS_MISSING_FIELDS = JSON.stringify({
   },
 })
 
+function mockLlmReturn(text: string) {
+  return { text, cost_usd: 0, tokens_used: 0 }
+}
+
 describe("kaizen analyze() with LLM call", () => {
   beforeEach(() => {
     initDb(":memory:", migrationsDir)
@@ -77,20 +81,18 @@ describe("kaizen analyze() with LLM call", () => {
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
     expect(result).toBeNull()
-    expect(mockSpawnClaude).not.toHaveBeenCalled()
+    expect(mockCallLlm).not.toHaveBeenCalled()
   })
 
-  it("calls spawnClaude with failed task context and returns parsed analysis", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+  it("calls callLlm with failed task context and returns parsed analysis", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(VALID_ANALYSIS))
 
     for (let i = 0; i < 3; i++) createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
-    const [args] = mockSpawnClaude.mock.calls[0]
-    expect(args).toContain("-p")
+    expect(mockCallLlm).toHaveBeenCalledOnce()
 
     expect(result).not.toBeNull()
     expect(result!.analysis.top_failure).toBe("test_gap")
@@ -100,78 +102,76 @@ describe("kaizen analyze() with LLM call", () => {
     expect(result!.improvements[0].action).toBe("add_check")
   })
 
-  it("returns null when claude output fails Zod validation (bad root_cause)", async () => {
-    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_BAD_ROOT_CAUSE)
+  it("returns null when LLM output fails Zod validation (bad root_cause)", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(INVALID_ANALYSIS_BAD_ROOT_CAUSE))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
+    expect(mockCallLlm).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
   it("returns null when improvements array is empty (min 1 required)", async () => {
-    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_EMPTY_IMPROVEMENTS)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(INVALID_ANALYSIS_EMPTY_IMPROVEMENTS))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
+    expect(mockCallLlm).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
-  it("returns null when claude returns non-JSON output", async () => {
-    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_NOT_JSON)
+  it("returns null when LLM returns non-JSON output", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(INVALID_ANALYSIS_NOT_JSON))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
+    expect(mockCallLlm).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
-  it("returns null when claude output has missing required fields", async () => {
-    mockSpawnClaude.mockResolvedValue(INVALID_ANALYSIS_MISSING_FIELDS)
+  it("returns null when LLM output has missing required fields", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(INVALID_ANALYSIS_MISSING_FIELDS))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
+    expect(mockCallLlm).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
-  it("returns null when spawnClaude rejects (process error)", async () => {
-    mockSpawnClaude.mockRejectedValue(new Error("claude: command not found"))
+  it("returns null when callLlm rejects (API error)", async () => {
+    mockCallLlm.mockRejectedValue(new Error("API error"))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     const result = await analyze()
 
-    expect(mockSpawnClaude).toHaveBeenCalledOnce()
+    expect(mockCallLlm).toHaveBeenCalledOnce()
     expect(result).toBeNull()
   })
 
-  it("includes failed task info in the prompt sent to claude", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+  it("includes failed task info in the prompt sent to LLM", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(VALID_ANALYSIS))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     await analyze()
 
-    const [args] = mockSpawnClaude.mock.calls[0]
-    const promptFlagIndex = args.indexOf("-p")
-    expect(promptFlagIndex).toBeGreaterThanOrEqual(0)
-    const prompt = args[promptFlagIndex + 1]
+    // callLlm(prompt, cwd, timeoutMs)
+    const [prompt] = mockCallLlm.mock.calls[0]
     expect(prompt).toContain("fail")
   })
 
@@ -186,7 +186,7 @@ describe("kaizen analyze() with LLM call", () => {
         { target: "gate1", action: "add_check", description: "fix" },
       ],
     })
-    mockSpawnClaude.mockResolvedValue(tooLongChain)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(tooLongChain))
 
     createFailedTask()
 
@@ -196,39 +196,38 @@ describe("kaizen analyze() with LLM call", () => {
     expect(result).toBeNull()
   })
 
-  it("passes timeout to spawnClaude", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+  it("passes timeout to callLlm", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(VALID_ANALYSIS))
 
     createFailedTask()
 
     const { analyze } = await import("../kaizen.js")
     await analyze()
 
-    const callArgs = mockSpawnClaude.mock.calls[0]
-    // spawnClaude(args, cwd, timeoutMs) — third argument is timeout
+    const callArgs = mockCallLlm.mock.calls[0]
+    // callLlm(prompt, cwd, timeoutMs) — third argument is timeout
     const timeoutMs = callArgs[2]
     expect(timeoutMs).toBeGreaterThan(0)
   })
 
   it("includes all failed tasks in prompt when multiple failures exist", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(VALID_ANALYSIS))
 
     const ids = [createFailedTask(), createFailedTask(), createFailedTask()]
 
     const { analyze } = await import("../kaizen.js")
     await analyze()
 
-    const [args] = mockSpawnClaude.mock.calls[0]
-    const promptFlagIndex = args.indexOf("-p")
-    const prompt = args[promptFlagIndex + 1]
+    // callLlm(prompt, cwd, timeoutMs)
+    const [prompt] = mockCallLlm.mock.calls[0]
     // All 3 failed tasks should be referenced in the prompt
     for (const id of ids) {
       expect(prompt).toContain(id)
     }
   })
 
-  it("strips markdown code fences from claude output before parsing", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS_WITH_FENCES)
+  it("strips markdown code fences from LLM output before parsing", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(VALID_ANALYSIS_WITH_FENCES))
 
     createFailedTask()
 
@@ -240,7 +239,7 @@ describe("kaizen analyze() with LLM call", () => {
   })
 
   it("limits input tasks to a maximum of 20", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(VALID_ANALYSIS))
 
     // Create 25 failed tasks — only 20 should appear in the prompt
     for (let i = 0; i < 25; i++) createFailedTask()
@@ -248,9 +247,8 @@ describe("kaizen analyze() with LLM call", () => {
     const { analyze } = await import("../kaizen.js")
     await analyze()
 
-    const [args] = mockSpawnClaude.mock.calls[0]
-    const promptFlagIndex = args.indexOf("-p")
-    const prompt: string = args[promptFlagIndex + 1]
+    // callLlm(prompt, cwd, timeoutMs)
+    const prompt: string = mockCallLlm.mock.calls[0][0]
     // Count task entries in prompt (each line starts with "- [")
     const taskLines = prompt.split("\n").filter((l: string) => l.startsWith("- ["))
     expect(taskLines).toHaveLength(20)
@@ -269,7 +267,7 @@ describe("kaizen analyze() edge cases", () => {
 
   it("strips markdown fences without language tag", async () => {
     const withPlainFences = "```\n" + VALID_ANALYSIS + "\n```"
-    mockSpawnClaude.mockResolvedValue(withPlainFences)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(withPlainFences))
 
     createFailedTask()
 
@@ -280,8 +278,8 @@ describe("kaizen analyze() edge cases", () => {
     expect(result!.analysis.top_failure).toBe("test_gap")
   })
 
-  it("returns null when spawnClaude returns empty string", async () => {
-    mockSpawnClaude.mockResolvedValue("")
+  it("returns null when callLlm returns empty string", async () => {
+    mockCallLlm.mockResolvedValue(mockLlmReturn(""))
 
     createFailedTask()
 
@@ -303,7 +301,7 @@ describe("kaizen analyze() edge cases", () => {
         { target: "gate1", action: "add_check", description: "修正" },
       ],
     })
-    mockSpawnClaude.mockResolvedValue(wrappedJson)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(wrappedJson))
 
     createFailedTask()
 
@@ -326,7 +324,7 @@ describe("kaizen analyze() edge cases", () => {
         description: `改善${i}`,
       })),
     })
-    mockSpawnClaude.mockResolvedValue(tooManyImprovements)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(tooManyImprovements))
 
     createFailedTask()
 
@@ -347,7 +345,7 @@ describe("kaizen analyze() edge cases", () => {
         { target: "gate1", action: "add_check", description: "修正" },
       ],
     })
-    mockSpawnClaude.mockResolvedValue(emptyWhyChain)
+    mockCallLlm.mockResolvedValue(mockLlmReturn(emptyWhyChain))
 
     createFailedTask()
 
@@ -355,19 +353,6 @@ describe("kaizen analyze() edge cases", () => {
     const result = await analyze()
 
     expect(result).toBeNull()
-  })
-
-  it("passes --output-format json flag to spawnClaude", async () => {
-    mockSpawnClaude.mockResolvedValue(VALID_ANALYSIS)
-
-    createFailedTask()
-
-    const { analyze } = await import("../kaizen.js")
-    await analyze()
-
-    const [args] = mockSpawnClaude.mock.calls[0]
-    expect(args).toContain("--output-format")
-    expect(args).toContain("json")
   })
 
   it("accepts all valid top_failure enum values", async () => {
@@ -387,7 +372,7 @@ describe("kaizen analyze() edge cases", () => {
           { target: "gate1", action: "add_check", description: "fix" },
         ],
       })
-      mockSpawnClaude.mockResolvedValue(analysis)
+      mockCallLlm.mockResolvedValue(mockLlmReturn(analysis))
       createFailedTask()
 
       const { analyze } = await import("../kaizen.js")

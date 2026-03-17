@@ -8,7 +8,6 @@ vi.mock("node:child_process", () => ({
 
 vi.mock("../config.js", () => ({
   config: {
-    CLI_BACKEND: "claude",
     PROJECT_ROOT: "/tmp/project-root",
   },
 }))
@@ -24,7 +23,7 @@ describe("runCredentialHealthChecks", () => {
   it("returns all ok when every command succeeds", () => {
     const checks = runCredentialHealthChecks()
 
-    expect(checks).toHaveLength(3)
+    expect(checks).toHaveLength(2)
     expect(checks.every((check) => check.ok)).toBe(true)
     expect(execFileSyncMock).toHaveBeenNthCalledWith(
       1,
@@ -38,12 +37,6 @@ describe("runCredentialHealthChecks", () => {
       ["ls-remote", "--exit-code", "origin", "HEAD"],
       expect.objectContaining({ cwd: "/tmp/project-root", timeout: 5000 }),
     )
-    expect(execFileSyncMock).toHaveBeenNthCalledWith(
-      3,
-      "claude",
-      ["--version"],
-      expect.objectContaining({ timeout: 5000 }),
-    )
   })
 
   it("returns mixed results when one command fails", () => {
@@ -56,7 +49,7 @@ describe("runCredentialHealthChecks", () => {
 
     const checks = runCredentialHealthChecks()
 
-    expect(checks.map((check) => check.ok)).toEqual([true, false, true])
+    expect(checks.map((check) => check.ok)).toEqual([true, false])
     expect(checks[1].message).toContain("exit: 128")
   })
 
@@ -67,10 +60,9 @@ describe("runCredentialHealthChecks", () => {
 
     const checks = runCredentialHealthChecks()
 
-    expect(checks).toHaveLength(3)
+    expect(checks).toHaveLength(2)
     expect(checks.every((check) => !check.ok)).toBe(true)
     expect(checks.map((check) => check.message)).toEqual([
-      "failed (exit: 1)",
       "failed (exit: 1)",
       "failed (exit: 1)",
     ])

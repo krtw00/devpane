@@ -156,8 +156,7 @@ export type Config = {
   CB_THRESHOLD: number
   CB_BACKOFF_SEC: number
   CB_MAX_BACKOFF_SEC: number
-  CLI_BACKEND: "claude" | "codex"
-  LLM_BACKEND: "cli" | "openai-compatible"
+  LLM_BACKEND: string
   LLM_API_KEY: string | null
   LLM_BASE_URL: string | null
   LLM_MODEL: string | null

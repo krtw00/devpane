@@ -4,11 +4,10 @@ import { initDb, closeDb, createTask, getDb, getAgentEvents } from "../db.js"
 import { remember } from "../memory.js"
 import type { Task } from "@devpane/shared"
 
-// Mock spawnClaude to control LLM output
-const mockSpawnClaude = vi.fn()
-vi.mock("../claude.js", () => ({
-  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
-  killAllClaude: vi.fn(),
+// Mock callLlm to control LLM output
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
 }))
 
 vi.mock("../ws.js", () => ({
@@ -82,18 +81,18 @@ describe("Gate1 LLM fallback", () => {
   beforeEach(() => {
     closeDb()
     initDb(":memory:")
-    mockSpawnClaude.mockReset()
+    mockCallLlm.mockReset()
   })
 
   it("returns recycle when LLM output is invalid JSON", async () => {
-    mockSpawnClaude.mockResolvedValue("this is not json at all")
+    mockCallLlm.mockResolvedValue({ text: "this is not json at all", cost_usd: 0, tokens_used: 0 })
 
     const result = await runGate1(makeTask())
     expect(result.verdict).toBe("recycle")
   })
 
   it("records gate.llm_fallback event on parse failure", async () => {
-    mockSpawnClaude.mockResolvedValue("unparseable garbage")
+    mockCallLlm.mockResolvedValue({ text: "unparseable garbage", cost_usd: 0, tokens_used: 0 })
 
     await runGate1(makeTask())
 
@@ -106,15 +105,15 @@ describe("Gate1 LLM fallback", () => {
     })
   })
 
-  it("returns recycle when spawnClaude throws", async () => {
-    mockSpawnClaude.mockRejectedValue(new Error("claude process crashed"))
+  it("returns recycle when callLlm throws", async () => {
+    mockCallLlm.mockRejectedValue(new Error("API error"))
 
     const result = await runGate1(makeTask())
     expect(result.verdict).toBe("recycle")
   })
 
-  it("records gate.llm_fallback event when spawnClaude throws", async () => {
-    mockSpawnClaude.mockRejectedValue(new Error("timeout"))
+  it("records gate.llm_fallback event when callLlm throws", async () => {
+    mockCallLlm.mockRejectedValue(new Error("timeout"))
 
     await runGate1(makeTask())
 

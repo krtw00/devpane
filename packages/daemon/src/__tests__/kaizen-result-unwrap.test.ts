@@ -6,9 +6,9 @@ import { initDb, closeDb, getDb, createTask, startTask } from "../db.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
-const mockSpawnClaude = vi.fn()
-vi.mock("../claude.js", () => ({
-  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
 }))
 
 function createFailedTask() {
@@ -42,13 +42,12 @@ describe("kaizen analyze() result field unwrap", () => {
     closeDb()
   })
 
-  it("unwraps { result: '...' } wrapper from --output-format json output", async () => {
-    // claude CLI returns {"result": "<escaped json>", "total_cost_usd": ...}
+  it("unwraps { result: '...' } wrapper from JSON output", async () => {
     const wrapped = JSON.stringify({
       result: JSON.stringify(VALID_ANALYSIS),
       total_cost_usd: 0.05,
     })
-    mockSpawnClaude.mockResolvedValue(wrapped)
+    mockCallLlm.mockResolvedValue({ text: wrapped, cost_usd: 0.05, tokens_used: 100 })
 
     createFailedTask()
 
@@ -67,7 +66,7 @@ describe("kaizen analyze() result field unwrap", () => {
       result: innerWithFences,
       total_cost_usd: 0.03,
     })
-    mockSpawnClaude.mockResolvedValue(wrapped)
+    mockCallLlm.mockResolvedValue({ text: wrapped, cost_usd: 0.03, tokens_used: 80 })
 
     createFailedTask()
 
@@ -79,8 +78,7 @@ describe("kaizen analyze() result field unwrap", () => {
   })
 
   it("still works with direct JSON output (no result wrapper / fallback)", async () => {
-    // If spawnClaude returns raw JSON without the wrapper
-    mockSpawnClaude.mockResolvedValue(JSON.stringify(VALID_ANALYSIS))
+    mockCallLlm.mockResolvedValue({ text: JSON.stringify(VALID_ANALYSIS), cost_usd: 0, tokens_used: 0 })
 
     createFailedTask()
 

@@ -3,10 +3,9 @@ import { runGate1 } from "../gate1.js"
 import { initDb, closeDb } from "../db.js"
 import type { Task } from "@devpane/shared"
 
-const mockSpawnClaude = vi.fn()
-vi.mock("../claude.js", () => ({
-  spawnClaude: (...args: unknown[]) => mockSpawnClaude(...args),
-  killAllClaude: vi.fn(),
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
 }))
 
 vi.mock("../ws.js", () => ({
@@ -43,31 +42,37 @@ describe("Gate1 JSON parse", () => {
   beforeEach(() => {
     closeDb()
     initDb(":memory:")
-    mockSpawnClaude.mockReset()
+    mockCallLlm.mockReset()
   })
 
   it("正常なJSONを正しくパースする", async () => {
-    mockSpawnClaude.mockResolvedValue(
-      '{"verdict": "go", "reason": "タスクは有用です"}',
-    )
+    mockCallLlm.mockResolvedValue({
+      text: '{"verdict": "go", "reason": "タスクは有用です"}',
+      cost_usd: 0,
+      tokens_used: 0,
+    })
 
     const result = await runGate1(makeTask())
     expect(result.verdict).toBe("go")
   })
 
   it("複数JSONブロックがある場合、最初のオブジェクトのみを抽出する", async () => {
-    // 貪欲マッチだと `{"verdict": "go", "reason": "ok"} some text {"extra": "data"}` 全体がマッチし、
-    // JSON.parse に失敗して recycle になる。非貪欲マッチなら最初の `{}` のみ抽出して go になる。
-    mockSpawnClaude.mockResolvedValue(
-      '{"verdict": "go", "reason": "ok"} some text {"extra": "data"}',
-    )
+    mockCallLlm.mockResolvedValue({
+      text: '{"verdict": "go", "reason": "ok"} some text {"extra": "data"}',
+      cost_usd: 0,
+      tokens_used: 0,
+    })
 
     const result = await runGate1(makeTask())
     expect(result.verdict).toBe("go")
   })
 
   it("パース不能な出力で recycle を返す", async () => {
-    mockSpawnClaude.mockResolvedValue("no json here at all")
+    mockCallLlm.mockResolvedValue({
+      text: "no json here at all",
+      cost_usd: 0,
+      tokens_used: 0,
+    })
 
     const result = await runGate1(makeTask())
     expect(result.verdict).toBe("recycle")
