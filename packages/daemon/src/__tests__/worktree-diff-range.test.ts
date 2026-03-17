@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 vi.mock("../config.js", () => ({
-  config: { PROJECT_ROOT: "/fake/project" },
+  config: { PROJECT_ROOT: "/fake/project", BASE_BRANCH: "main", BRANCH_PREFIX: "devpane" },
 }))
 
 const execFileSyncMock = vi.fn()
@@ -22,6 +22,7 @@ describe("getWorktreeDiff diff range", () => {
     vi.clearAllMocks()
     // Default: merge-base returns a hash, diff commands return plausible output
     execFileSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "git" && args[0] === "show-ref") return ""
       if (cmd === "git" && args[0] === "merge-base") return "aaa111\n"
       if (cmd === "git" && args[0] === "diff" && args.includes("--name-only")) return "file1.ts\nfile2.ts\n"
       if (cmd === "git" && args[0] === "diff" && args.includes("--stat")) return " 2 files changed, 20 insertions(+), 5 deletions(-)\n"
@@ -71,6 +72,7 @@ describe("getWorktreeNewAndDeleted diff range", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     execFileSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "git" && args[0] === "show-ref") return ""
       if (cmd === "git" && args[0] === "merge-base") return "bbb222\n"
       if (cmd === "git" && args.includes("--diff-filter=A")) return "new-file.ts\n"
       if (cmd === "git" && args.includes("--diff-filter=D")) return "old-file.ts\n"

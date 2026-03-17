@@ -6,9 +6,38 @@ import { config } from "./config.js"
 const WORKTREE_DIR = join(config.PROJECT_ROOT, ".worktrees")
 const OPEN_PR_CACHE_TTL_MS = 5 * 60 * 1000
 let lastKnownOpenPrs: { value: number, updatedAt: number } | null = null
+let warnedMissingBaseRef = false
 
-function git(...args: string[]): string {
-  return execFileSync("git", args, { cwd: config.PROJECT_ROOT, encoding: "utf-8" }).trim()
+function git(args: string[], options?: { cwd?: string; quietStderr?: boolean; timeout?: number }): string {
+  return execFileSync("git", args, {
+    cwd: options?.cwd ?? config.PROJECT_ROOT,
+    encoding: "utf-8",
+    timeout: options?.timeout,
+    stdio: ["ignore", "pipe", options?.quietStderr ? "ignore" : "pipe"],
+  }).trim()
+}
+
+function refExists(ref: string): boolean {
+  try {
+    execFileSync("git", ["show-ref", "--verify", "--quiet", ref], {
+      cwd: config.PROJECT_ROOT,
+      stdio: ["ignore", "ignore", "ignore"],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function resolveBaseRef(): string {
+  if (refExists(`refs/heads/${config.BASE_BRANCH}`)) return config.BASE_BRANCH
+  if (refExists(`refs/remotes/origin/${config.BASE_BRANCH}`)) return `origin/${config.BASE_BRANCH}`
+
+  if (!warnedMissingBaseRef) {
+    console.warn(`[worktree] base branch ${config.BASE_BRANCH} not found, falling back to HEAD`)
+    warnedMissingBaseRef = true
+  }
+  return "HEAD"
 }
 
 export function createWorktree(taskId: string): string {
@@ -21,26 +50,23 @@ export function createWorktree(taskId: string): string {
   }
 
   // If branch exists but worktree doesn't, delete the branch first
-  try {
-    git("rev-parse", "--verify", branch)
-    git("branch", "-D", branch)
-  } catch {
-    // branch doesn't exist, good
+  if (refExists(`refs/heads/${branch}`)) {
+    git(["branch", "-D", branch], { quietStderr: true })
   }
 
-  git("worktree", "add", path, "-b", branch)
+  git(["worktree", "add", path, "-b", branch, resolveBaseRef()])
   return path
 }
 
 export function removeWorktree(taskId: string, keepBranch = false): void {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   if (existsSync(path)) {
-    git("worktree", "remove", path, "--force")
+    git(["worktree", "remove", path, "--force"])
   }
   if (!keepBranch) {
     const branch = `${config.BRANCH_PREFIX}/task-${taskId}`
     try {
-      git("branch", "-D", branch)
+      git(["branch", "-D", branch], { quietStderr: true })
     } catch {
       // branch may already be deleted
     }
@@ -57,8 +83,10 @@ export function commitWorktree(taskId: string, title: string): string | null {
       execFileSync("git", ["commit", "-m", `task-${taskId}: ${title}`], { cwd: path, encoding: "utf-8" })
     }
     // Return HEAD hash whether we committed or Worker already did
-    const mainHash = execFileSync("git", ["rev-parse", config.BASE_BRANCH], { cwd: path, encoding: "utf-8" }).trim()
+    const baseRef = resolveBaseRef()
     const headHash = execFileSync("git", ["rev-parse", "HEAD"], { cwd: path, encoding: "utf-8" }).trim()
+    if (baseRef === "HEAD") return headHash
+    const mainHash = execFileSync("git", ["rev-parse", baseRef], { cwd: path, encoding: "utf-8" }).trim()
     if (headHash === mainHash) return null // no new commits at all
     return headHash
   } catch (err) {
@@ -137,7 +165,7 @@ function hasOpenPr(branch: string): boolean {
 
 export function pruneWorktrees(): void {
   // git worktree prune で壊れた参照を掃除
-  git("worktree", "prune")
+  git(["worktree", "prune"])
 
   // .worktreesディレクトリ内の残骸を掃除
   if (!existsSync(WORKTREE_DIR)) return
@@ -146,7 +174,7 @@ export function pruneWorktrees(): void {
     if (!entry.startsWith("task-") && !entry.startsWith("merge-")) continue
     const path = join(WORKTREE_DIR, entry)
     try {
-      git("worktree", "remove", path, "--force")
+      git(["worktree", "remove", path, "--force"])
       console.log(`[worktree] pruned stale worktree: ${entry}`)
     } catch {
       // already removed or locked
@@ -155,14 +183,14 @@ export function pruneWorktrees(): void {
 
   // devpane/ プレフィックスの孤立ブランチを掃除
   try {
-    const branches = git("branch", "--list", `${config.BRANCH_PREFIX}/*`).split("\n").map(b => b.replace(/^[*+]\s+/, "").trim()).filter(Boolean)
+    const branches = git(["branch", "--list", `${config.BRANCH_PREFIX}/*`]).split("\n").map(b => b.replace(/^[*+]\s+/, "").trim()).filter(Boolean)
     for (const branch of branches) {
       if (hasOpenPr(branch)) {
         console.log(`[worktree] skipping branch with open PR: ${branch}`)
         continue
       }
       try {
-        git("branch", "-D", branch)
+        git(["branch", "-D", branch], { quietStderr: true })
         console.log(`[worktree] pruned stale branch: ${branch}`)
       } catch {
         // branch in use
@@ -176,7 +204,11 @@ export function pruneWorktrees(): void {
 export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; deleted: string[] } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {
-    const mergeBase = execFileSync("git", ["merge-base", "HEAD", config.BASE_BRANCH], { cwd: path, encoding: "utf-8" }).trim()
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", resolveBaseRef()], {
+      cwd: path,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
     const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     const deleted = execFileSync("git", ["diff", "--diff-filter=D", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     return {
@@ -190,7 +222,7 @@ export function getWorktreeNewAndDeleted(taskId: string): { added: string[]; del
 
 export function pullMain(): void {
   try {
-    git("pull", "--ff-only", "origin", config.BASE_BRANCH)
+    git(["pull", "--ff-only", "origin", config.BASE_BRANCH])
     console.log(`[worktree] pulled latest ${config.BASE_BRANCH}`)
   } catch (err) {
     console.warn(`[worktree] pull ${config.BASE_BRANCH} failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -225,7 +257,11 @@ export function resetOpenPrCountCacheForTests(): void {
 export function getWorktreeDiff(taskId: string): { filesChanged: string[]; additions: number; deletions: number } {
   const path = join(WORKTREE_DIR, `task-${taskId}`)
   try {
-    const mergeBase = execFileSync("git", ["merge-base", "HEAD", config.BASE_BRANCH], { cwd: path, encoding: "utf-8" }).trim()
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", resolveBaseRef()], {
+      cwd: path,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
     const nameOnly = execFileSync("git", ["diff", "--name-only", mergeBase], { cwd: path, encoding: "utf-8" }).trim()
     const filesChanged = nameOnly ? nameOnly.split("\n") : []
 
@@ -241,4 +277,8 @@ export function getWorktreeDiff(taskId: string): { filesChanged: string[]; addit
   } catch {
     return { filesChanged: [], additions: 0, deletions: 0 }
   }
+}
+
+export function resetBaseRefWarningForTests(): void {
+  warnedMissingBaseRef = false
 }
