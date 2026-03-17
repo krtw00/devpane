@@ -6,7 +6,8 @@ import { config } from "./config.js"
 import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask, appendLog } from "./db.js"
 import { broadcast } from "./ws.js"
 import { recall } from "./memory.js"
-import { spawnClaude, killAllClaude } from "./claude.js"
+import { killAllClaude } from "./claude.js"
+import { callLlm } from "./llm-bridge.js"
 
 export const killAllPm = killAllClaude
 
@@ -159,13 +160,11 @@ export async function runPm(): Promise<PmOutput> {
 
   const prompt = buildPmPrompt(context)
 
-  const args = ["-p", prompt, "--allowedTools", "Read,Glob,Grep", "--output-format", "json"]
-  console.log(`[pm] generating tasks... (prompt: ${prompt.length} chars, timeout: ${config.PM_TIMEOUT_MS}ms)`)
-  console.log(`[pm] running: claude ${args.filter(a => a !== prompt).join(" ")} [prompt omitted]`)
+  console.log(`[pm] generating tasks... (prompt: ${prompt.length} chars, timeout: ${config.PM_TIMEOUT_MS}ms, backend: ${config.LLM_BACKEND})`)
 
-  const stdout = await spawnClaude(args, config.PROJECT_ROOT)
+  const bridgeResult = await callLlm(prompt, config.PROJECT_ROOT, config.PM_TIMEOUT_MS)
 
-  const output = parsePmOutput(stdout)
+  const output = parsePmOutput(bridgeResult.text)
   console.log(`[pm] generated ${output.tasks.length} tasks: ${output.reasoning}`)
 
   // PM reasoning をログに保存 + WebSocket配信（Shogun UI用）

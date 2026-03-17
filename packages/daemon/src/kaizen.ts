@@ -2,8 +2,8 @@ import type { WhyWhyAnalysis } from "@devpane/shared/schemas"
 import { WhyWhyAnalysisSchema } from "@devpane/shared/schemas"
 import { getFailedTasks, getRecentImprovements } from "./db.js"
 import { recall } from "./memory.js"
-import { spawnClaude } from "./claude.js"
 import { config } from "./config.js"
+import { callLlm } from "./llm-bridge.js"
 
 const CLAUDE_TIMEOUT_MS = 120_000
 const MAX_INPUT_TASKS = 20
@@ -74,15 +74,16 @@ ${taskSummaries}${context}
 Respond with ONLY the JSON object, no markdown fences or explanation.`
 
   try {
-    const output = await spawnClaude(["-p", prompt, "--output-format", "json"], config.PROJECT_ROOT, CLAUDE_TIMEOUT_MS)
+    const bridgeResult = await callLlm(prompt, config.PROJECT_ROOT, CLAUDE_TIMEOUT_MS)
 
-    // --output-format json ラッパー {"result": "...", "total_cost_usd": ...} を剥がす
+    // CLI mode: --output-format json ラッパー {"result": "...", "total_cost_usd": ...} を剥がす
+    // API mode: 直接テキストが返る（json.resultがなければそのまま使う）
     let inner: string
     try {
-      const json = JSON.parse(output)
-      inner = json.result ?? output
+      const json = JSON.parse(bridgeResult.text)
+      inner = json.result ?? bridgeResult.text
     } catch {
-      inner = output
+      inner = bridgeResult.text
     }
 
     const cleaned = stripMarkdownFences(inner)

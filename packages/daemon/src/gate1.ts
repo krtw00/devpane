@@ -6,8 +6,8 @@ import { recall } from "./memory.js"
 import { isDuplicate } from "./pm.js"
 import { emit } from "./events.js"
 import { appendLog } from "./db.js"
-import { spawnClaude } from "./claude.js"
 import { config } from "./config.js"
+import { callLlm } from "./llm-bridge.js"
 
 export type Gate1Result = {
   verdict: "go" | "kill" | "recycle"
@@ -92,18 +92,17 @@ function buildGate1Prompt(task: Task): string {
 
 async function runGate1Llm(task: Task): Promise<Gate1Result> {
   const prompt = buildGate1Prompt(task)
-  const args = ["-p", prompt, "--output-format", "json"]
 
   try {
-    const stdout = await spawnClaude(args, config.PROJECT_ROOT, GATE1_TIMEOUT_MS)
+    const bridgeResult = await callLlm(prompt, config.PROJECT_ROOT, GATE1_TIMEOUT_MS)
 
-    // Parse claude CLI output
+    // Parse LLM output (CLI mode: JSON wrapper with result field, API mode: direct text)
     let text: string
     try {
-      const json = JSON.parse(stdout)
-      text = json.result ?? stdout
+      const json = JSON.parse(bridgeResult.text)
+      text = json.result ?? bridgeResult.text
     } catch {
-      text = stdout
+      text = bridgeResult.text
     }
 
     const match = text.match(/\{[\s\S]*?\}/)
