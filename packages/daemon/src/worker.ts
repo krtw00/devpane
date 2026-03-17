@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { Task } from "@devpane/shared"
+import { buildWorkerCliArgs } from "./claude.js"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { emit } from "./events.js"
@@ -52,15 +53,8 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
 
     const fullPrompt = promptParts.join("\n")
 
-    const proc = spawn("claude", [
-      "-p", fullPrompt,
-      "--output-format", "stream-json",
-      "--verbose",
-      "--max-turns", "30",
-      "--allowedTools", "Read,Edit,Write,Bash,Glob,Grep",
-      "--permission-mode", "bypassPermissions",
-      "--no-session-persistence",
-    ], {
+    const { bin, args: cliArgs } = buildWorkerCliArgs(fullPrompt)
+    const proc = spawn(bin, cliArgs, {
       cwd: worktreePath,
       env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -101,6 +95,21 @@ export function runWorker(task: Task, worktreePath: string, testFiles: string[] 
           if (inner?.delta?.type === "input_json_delta" && inner.delta.partial_json) {
             broadcast("worker:tool_input", { taskId: task.id, json: inner.delta.partial_json })
           }
+        }
+
+        // Codex format
+        if (event.type === "message" && event.content) {
+          for (const block of event.content) {
+            if (block.type === "text" && block.text) {
+              appendLog(task.id, "worker", block.text)
+              broadcast("worker:text", { taskId: task.id, text: block.text })
+              resultText = block.text
+            }
+          }
+        }
+        if (event.type === "function_call") {
+          appendLog(task.id, "worker", `[tool] ${event.name}`)
+          broadcast("worker:tool", { taskId: task.id, tool: event.name })
         }
 
         if (event.type === "result") {

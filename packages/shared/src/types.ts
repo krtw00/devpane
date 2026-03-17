@@ -143,4 +143,5 @@ export type Config = {
   CB_THRESHOLD: number
   CB_BACKOFF_SEC: number
   CB_MAX_BACKOFF_SEC: number
+  CLI_BACKEND: "claude" | "codex"
 }

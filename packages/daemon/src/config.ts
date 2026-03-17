@@ -50,6 +50,7 @@ export const config: Config = {
   CB_THRESHOLD: Number(env("DEVPANE_CB_THRESHOLD", "3")),
   CB_BACKOFF_SEC: Number(env("DEVPANE_CB_BACKOFF_SEC", "300")),
   CB_MAX_BACKOFF_SEC: Number(env("DEVPANE_CB_MAX_BACKOFF_SEC", "3600")),
+  CLI_BACKEND: env("CLI_BACKEND", "claude") as "claude" | "codex",
 }
 
 export function parseCmd(cmd: string): { bin: string; args: string[] } {

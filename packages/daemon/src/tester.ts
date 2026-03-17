@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { PmOutput } from "@devpane/shared"
+import { buildTesterCliArgs } from "./claude.js"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { emit } from "./events.js"
@@ -143,15 +144,8 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
 
     const prompt = buildTesterPrompt(spec)
 
-    const proc = spawn("claude", [
-      "-p", prompt,
-      "--output-format", "stream-json",
-      "--verbose",
-      "--max-turns", "30",
-      "--allowedTools", "Read,Edit,Write,Glob,Grep",
-      "--permission-mode", "bypassPermissions",
-      "--no-session-persistence",
-    ], {
+    const { bin, args: cliArgs } = buildTesterCliArgs(prompt)
+    const proc = spawn(bin, cliArgs, {
       cwd: worktreePath,
       env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -203,6 +197,27 @@ export function runTester(spec: PmOutput, worktreePath: string, taskId?: string)
             if (filePath) addTestFile(testFiles, filePath)
             trackingToolUse = false
             jsonBuffer = ""
+          }
+        }
+
+        // Codex format: detect test files from function_call events
+        if (event.type === "function_call" && (event.name === "write" || event.name === "edit")) {
+          try {
+            const fnArgs = typeof event.arguments === "string" ? JSON.parse(event.arguments) : event.arguments
+            const filePath = fnArgs?.file_path ?? fnArgs?.path
+            if (filePath) addTestFile(testFiles, filePath)
+          } catch { /* ignore parse errors */ }
+        }
+        if (event.type === "message" && event.content) {
+          for (const block of event.content) {
+            if (block.type === "text" && block.text) {
+              const matches = block.text.match(new RegExp(`[\\w/.-]+${testFileSuffix().replace(/\./g, "\\.")}`, "g"))
+              if (matches) {
+                for (const m of matches) {
+                  addTestFile(testFiles, m)
+                }
+              }
+            }
           }
         }
 
