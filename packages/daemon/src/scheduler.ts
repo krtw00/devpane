@@ -1,6 +1,6 @@
 import type { ActiveHours, Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, claimNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, recoverOrphanedTasks } from "./db.js"
+import { getNextPending, claimNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, recoverOrphanedTasks, suppressTerminalFailedTask, suppressTerminalFailedTasks } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, autoMergePr, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -250,9 +250,10 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: gate1.reasons.join("; ") })
     remember("lesson", `[gate1:kill] ${gate1.reasons.join("; ")}`, task.id)
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
+    const finalStatus = applyTaskSuppression(task.id)
     recordTaskMetrics(task.id, 0, Date.now() - taskStartTime, 0)
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
-    broadcast("task:updated", { id: task.id, status: "failed" })
+    broadcast("task:updated", { id: task.id, status: finalStatus })
     resetWorkerState(workerId)
     return
   }
@@ -303,9 +304,10 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
         console.error(`[${workerId}] tester timed out for task ${task.id}, skipping worker`)
         appendLog(task.id, "tester", `[timeout] tester timed out, skipping worker`)
         finishTask(task.id, "failed", JSON.stringify({ error: "tester_timeout" }))
+        const finalStatus = applyTaskSuppression(task.id)
         recordTaskMetrics(task.id, 0, Date.now() - taskStartTime, 0)
         emit({ type: "task.failed", taskId: task.id, rootCause: "timeout" })
-        broadcast("task:updated", { id: task.id, status: "failed" })
+        broadcast("task:updated", { id: task.id, status: finalStatus })
         removeWorktree(task.id)
         resetWorkerState(workerId)
         return
@@ -360,12 +362,13 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "kill", reason: gate3.reasons.join("; ") })
       remember("lesson", `[gate3:kill] ${gate3.reasons.join("; ")}`, task.id)
       finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
+      const finalStatus = applyTaskSuppression(task.id)
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
       recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
       emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
       await runHooks("task.failed", { task, rootCause: gate3.failure?.root_cause ?? "unknown" })
-      broadcast("task:updated", { id: task.id, status: "failed", result: facts })
+      broadcast("task:updated", { id: task.id, status: finalStatus, result: facts })
     } else if (gate3.verdict === "recycle") {
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "recycle", reason: gate3.reasons.join("; ") })
       remember("lesson", `[gate3:recycle] ${gate3.reasons.join("; ")}`, task.id)
@@ -382,9 +385,10 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
       } else {
         console.log(`[${workerId}] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: { ...gate3, verdict: "kill", reasons: [...gate3.reasons, `max retries (${config.MAX_RETRIES}) exceeded`] } }))
+        const finalStatus = applyTaskSuppression(task.id)
         emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
         await runHooks("task.failed", { task, rootCause: gate3.failure?.root_cause ?? "unknown" })
-        broadcast("task:updated", { id: task.id, status: "failed", result: facts })
+        broadcast("task:updated", { id: task.id, status: finalStatus, result: facts })
       }
     } else {
       // Gate 3 passed → PR作成
@@ -552,6 +556,14 @@ export function recoverOrphanTasks(): void {
   }
 }
 
+function applyTaskSuppression(taskId: string): "failed" | "suppressed" {
+  const suppressed = suppressTerminalFailedTask(taskId)
+  if (!suppressed) return "failed"
+  appendLog(taskId, "system", `[suppressed] ${suppressed.reason}`)
+  emit({ type: "task.suppressed", taskId, reason: suppressed.reason })
+  return "suppressed"
+}
+
 export async function startScheduler(): Promise<void> {
   console.log("[scheduler] starting autonomous loop")
   alive = true
@@ -562,6 +574,14 @@ export async function startScheduler(): Promise<void> {
   }
   lastPruneAt = Date.now()
   recoverOrphanTasks()
+  const suppressed = suppressTerminalFailedTasks()
+  if (suppressed.length > 0) {
+    console.log(`[scheduler] suppressed ${suppressed.length} terminal failed tasks`)
+    for (const item of suppressed) {
+      appendLog(item.taskId, "system", `[suppressed] ${item.reason}`)
+      emit({ type: "task.suppressed", taskId: item.taskId, reason: item.reason })
+    }
+  }
 
   // Initialize shift tracking
   wasWithinHours = isWithinActiveHours(config.ACTIVE_HOURS)

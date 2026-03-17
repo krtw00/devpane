@@ -87,6 +87,7 @@ export const AgentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("task.started"), taskId: z.string(), workerId: z.string() }),
   z.object({ type: z.literal("task.completed"), taskId: z.string(), costUsd: z.number() }),
   z.object({ type: z.literal("task.failed"), taskId: z.string(), rootCause: RootCause }),
+  z.object({ type: z.literal("task.suppressed"), taskId: z.string(), reason: z.string() }),
   z.object({ type: z.literal("gate.passed"), taskId: z.string(), gate: PipelineStage }),
   z.object({ type: z.literal("gate.rejected"), taskId: z.string(), gate: PipelineStage, verdict: z.enum(["kill", "recycle"]), reason: z.string() }),
   z.object({ type: z.literal("worker.rate_limited"), backoffSec: z.number() }),

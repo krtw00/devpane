@@ -2,6 +2,7 @@ import { ulid } from "ulid"
 import type { Task, TaskLog, TaskStatus, TaskCreator } from "@devpane/shared"
 import { getDb } from "./core.js"
 import { insertAgentEvent } from "./events.js"
+import { getSuppressionReason } from "../task-suppression.js"
 
 export function createTask(
   title: string,
@@ -78,6 +79,10 @@ export function requeueTask(id: string): void {
   getDb().prepare(`UPDATE tasks SET status = 'pending', started_at = NULL, assigned_to = NULL, finished_at = NULL, result = NULL, retry_count = retry_count + 1 WHERE id = ?`).run(id)
 }
 
+export function suppressTask(id: string): void {
+  getDb().prepare(`UPDATE tasks SET status = 'suppressed', started_at = NULL, assigned_to = NULL WHERE id = ?`).run(id)
+}
+
 export function getRetryCount(id: string): number {
   const row = getDb().prepare(`SELECT retry_count FROM tasks WHERE id = ?`).get(id) as { retry_count: number } | undefined
   return row?.retry_count ?? 0
@@ -110,6 +115,26 @@ export function getTaskLogs(taskId: string): TaskLog[] {
 
 export function getTasksSince(timestamp: string): Task[] {
   return getDb().prepare(`SELECT * FROM tasks WHERE status IN ('done', 'failed') AND finished_at > ? ORDER BY finished_at ASC`).all(timestamp) as Task[]
+}
+
+export function suppressTerminalFailedTask(id: string): { taskId: string; reason: string } | null {
+  const task = getTask(id)
+  if (!task) return null
+  const reason = getSuppressionReason(task)
+  if (!reason) return null
+  suppressTask(id)
+  return { taskId: id, reason }
+}
+
+export function suppressTerminalFailedTasks(): { taskId: string; reason: string }[] {
+  const suppressed: { taskId: string; reason: string }[] = []
+  for (const task of getFailedTasks()) {
+    const reason = getSuppressionReason(task)
+    if (!reason) continue
+    suppressTask(task.id)
+    suppressed.push({ taskId: task.id, reason })
+  }
+  return suppressed
 }
 
 /**

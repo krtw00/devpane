@@ -7,6 +7,7 @@ import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, crea
 import { broadcast } from "./ws.js"
 import { recall } from "./memory.js"
 import { callLlm } from "./llm-bridge.js"
+import { getSuppressionReason, getTaskFailureText } from "./task-suppression.js"
 
 export function killAllPm(): void {
   // No-op: API mode does not spawn child processes
@@ -189,28 +190,6 @@ export function isDuplicate(newTitle: string, existingTitles: string[]): boolean
   })
 }
 
-function parseFailureText(task: Task): string {
-  if (!task.result) return ""
-  try {
-    const parsed = JSON.parse(task.result) as {
-      error?: string
-      gate1?: { reasons?: string[] }
-      gate3?: { reasons?: string[], failure?: { root_cause?: string } }
-    }
-    return [
-      parsed.error,
-      ...(parsed.gate1?.reasons ?? []),
-      ...(parsed.gate3?.reasons ?? []),
-      parsed.gate3?.failure?.root_cause,
-    ]
-      .filter((value): value is string => typeof value === "string" && value.length > 0)
-      .join(" ")
-      .toLowerCase()
-  } catch {
-    return task.result.toLowerCase()
-  }
-}
-
 function isRetryableFailedTask(task: Task): boolean {
   if (task.retry_count >= config.MAX_RETRIES) return false
   if (!task.finished_at) return true
@@ -221,7 +200,8 @@ function isRetryableFailedTask(task: Task): boolean {
     if (Date.now() - finishedAt < cooldownMs) return false
   }
 
-  const failureText = parseFailureText(task)
+  if (getSuppressionReason(task)) return false
+  const failureText = getTaskFailureText(task)
   if (/duplicate|already implemented|max retries exceeded/.test(failureText)) return false
   return true
 }

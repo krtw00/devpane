@@ -1,5 +1,5 @@
 // Task status
-export type TaskStatus = "pending" | "running" | "done" | "failed"
+export type TaskStatus = "pending" | "running" | "done" | "failed" | "suppressed"
 
 // Task creator
 export type TaskCreator = "pm" | "human"

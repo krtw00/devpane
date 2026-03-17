@@ -6,7 +6,7 @@ export type Task = {
   id: string
   title: string
   description: string
-  status: 'pending' | 'running' | 'done' | 'failed'
+  status: 'pending' | 'running' | 'done' | 'failed' | 'suppressed'
   priority: number
   parent_id: string | null
   created_by: string
@@ -86,7 +86,7 @@ export async function retryTask(id: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
-export async function patchTask(id: string, body: { status?: 'pending' | 'cancelled'; priority?: number }): Promise<Task> {
+export async function patchTask(id: string, body: { status?: 'pending' | 'cancelled' | 'suppressed'; priority?: number }): Promise<Task> {
   const res = await fetch(`${BASE}/tasks/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

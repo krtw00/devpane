@@ -42,10 +42,10 @@ onWsEvent('task:created', () => refresh())
 onWsEvent('task:updated', () => refresh())
 
 // --- Filter ---
-const taskFilter = ref<'all' | 'pending' | 'running' | 'done' | 'failed'>('all')
+const taskFilter = ref<'all' | 'pending' | 'running' | 'done' | 'failed' | 'suppressed'>('all')
 
 const counts = computed(() => {
-  const c = { pending: 0, running: 0, done: 0, failed: 0 }
+  const c = { pending: 0, running: 0, done: 0, failed: 0, suppressed: 0 }
   for (const t of tasks.value) c[t.status]++
   return c
 })
@@ -56,8 +56,8 @@ const filteredTasks = computed(() => {
   return list
 })
 
-function statusIcon(s: Task['status']) { return { pending: '⏳', running: '⚡', done: '✅', failed: '❌' }[s] }
-function statusLabel(s: Task['status']) { return { pending: '待機', running: '実行中', done: '完了', failed: '失敗' }[s] }
+function statusIcon(s: Task['status']) { return { pending: '⏳', running: '⚡', done: '✅', failed: '❌', suppressed: '🧊' }[s] }
+function statusLabel(s: Task['status']) { return { pending: '待機', running: '実行中', done: '完了', failed: '失敗', suppressed: '抑止' }[s] }
 
 function timeAgo(iso: string | null): string {
   if (!iso) return ''
@@ -102,6 +102,7 @@ async function submitTask() {
         <button :class="{ active: taskFilter === 'running' }" @click="taskFilter = 'running'">実行中 {{ counts.running }}</button>
         <button :class="{ active: taskFilter === 'done' }" @click="taskFilter = 'done'">完了 {{ counts.done }}</button>
         <button :class="{ active: taskFilter === 'failed', bad: counts.failed > 0 }" @click="taskFilter = 'failed'">失敗 {{ counts.failed }}</button>
+        <button :class="{ active: taskFilter === 'suppressed' }" @click="taskFilter = 'suppressed'">抑止 {{ counts.suppressed }}</button>
       </div>
       <button class="add-btn" @click="showModal = true; taskForm = { title: '', description: '', priority: 50 }">+ タスク追加</button>
     </div>
@@ -237,6 +238,7 @@ header { margin-bottom: 1rem; }
 .s-running { border-left: 3px solid #d29922; }
 .s-failed { border-left: 3px solid #f85149; }
 .s-done { border-left: 3px solid #238636; }
+.s-suppressed { border-left: 3px solid #6e7681; opacity: 0.75; }
 
 .error-banner {
   background: #3d1214; color: #f85149; border: 1px solid #f8514930;

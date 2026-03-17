@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { getAllTasks, getTask, getTaskLogs, createTask, revertToPending, getTasksByStatus, updateTaskPriority, cancelTask } from "../db.js"
+import { getAllTasks, getTask, getTaskLogs, createTask, revertToPending, getTasksByStatus, updateTaskPriority, cancelTask, suppressTask, suppressTerminalFailedTasks } from "../db.js"
 import { traceTask } from "../pipeline-trace.js"
 
 export const tasksApi = new Hono()
@@ -39,7 +39,7 @@ tasksApi.get("/:id/logs", (c) => {
 tasksApi.post("/:id/retry", (c) => {
   const task = getTask(c.req.param("id"))
   if (!task) return c.json({ error: "not found" }, 404)
-  if (task.status !== "failed") return c.json({ error: "only failed tasks can be retried" }, 400)
+  if (task.status !== "failed" && task.status !== "suppressed") return c.json({ error: "only failed or suppressed tasks can be retried" }, 400)
   revertToPending(task.id)
   return c.json({ ok: true })
 })
@@ -48,13 +48,13 @@ tasksApi.patch("/:id", async (c) => {
   const task = getTask(c.req.param("id"))
   if (!task) return c.json({ error: "not found" }, 404)
 
-  const body = await c.req.json<{ status?: "pending" | "cancelled"; priority?: number }>()
+  const body = await c.req.json<{ status?: "pending" | "cancelled" | "suppressed"; priority?: number }>()
 
   if (body.status === undefined && body.priority === undefined) {
     return c.json({ error: "status or priority required" }, 400)
   }
-  if (body.status !== undefined && body.status !== "pending" && body.status !== "cancelled") {
-    return c.json({ error: "status must be pending or cancelled" }, 400)
+  if (body.status !== undefined && body.status !== "pending" && body.status !== "cancelled" && body.status !== "suppressed") {
+    return c.json({ error: "status must be pending, cancelled, or suppressed" }, 400)
   }
   if (
     body.priority !== undefined
@@ -62,11 +62,14 @@ tasksApi.patch("/:id", async (c) => {
   ) {
     return c.json({ error: "priority must be a number" }, 400)
   }
-  if (body.status === "pending" && task.status !== "failed") {
-    return c.json({ error: "only failed tasks can be reverted to pending" }, 400)
+  if (body.status === "pending" && task.status !== "failed" && task.status !== "suppressed") {
+    return c.json({ error: "only failed or suppressed tasks can be reverted to pending" }, 400)
   }
   if (body.status === "cancelled" && task.status !== "pending") {
     return c.json({ error: "only pending tasks can be cancelled" }, 400)
+  }
+  if (body.status === "suppressed" && task.status !== "failed") {
+    return c.json({ error: "only failed tasks can be suppressed" }, 400)
   }
 
   if (body.priority !== undefined) {
@@ -76,9 +79,15 @@ tasksApi.patch("/:id", async (c) => {
     revertToPending(task.id)
   } else if (body.status === "cancelled") {
     cancelTask(task.id)
+  } else if (body.status === "suppressed") {
+    suppressTask(task.id)
   }
 
   return c.json(getTask(task.id))
+})
+
+tasksApi.post("/maintenance/suppress-terminal", (c) => {
+  return c.json({ suppressed: suppressTerminalFailedTasks() })
 })
 
 tasksApi.post("/", async (c) => {

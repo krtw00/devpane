@@ -97,7 +97,7 @@ const diffDelPct = computed(() => {
         <span v-if="task.assigned_to">担当: {{ task.assigned_to }}</span>
         <span class="priority-display" @click="startEditPriority" title="クリックで変更">P:{{ task.priority }}</span>
         <a v-if="prUrl" :href="prUrl" target="_blank" class="pr-link">PR →</a>
-        <button v-if="task.status === 'failed'" class="retry-btn" @click="doRetry" :disabled="retrying">{{ retrying ? '再キュー中...' : '🔄 リトライ' }}</button>
+        <button v-if="task.status === 'failed' || task.status === 'suppressed'" class="retry-btn" @click="doRetry" :disabled="retrying">{{ retrying ? '再キュー中...' : '🔄 リトライ' }}</button>
         <button v-if="task.status === 'pending'" class="cancel-btn" @click="doCancel" :disabled="cancelling">{{ cancelling ? 'キャンセル中...' : '✕ キャンセル' }}</button>
       </div>
 
@@ -232,6 +232,7 @@ h2 {
 .badge-running { background: #d29922; color: #0d1117; }
 .badge-done { background: #238636; color: #f0f6fc; }
 .badge-failed { background: #f85149; color: #f0f6fc; }
+.badge-suppressed { background: #6e7681; color: #f0f6fc; }
 
 .pr-link {
   color: #58a6ff; text-decoration: none; font-size: 0.75rem;
