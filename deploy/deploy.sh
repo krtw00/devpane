@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${DEPLOY_HOST:-app-vps}"
+HOST="${DEPLOY_HOST:-apps-vps}"
 REMOTE_DIR="/opt/devpane"
 
 echo "==> Deploying DevPane to ${HOST}:${REMOTE_DIR}"
