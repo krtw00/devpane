@@ -157,4 +157,7 @@ export type Config = {
   CB_BACKOFF_SEC: number
   CB_MAX_BACKOFF_SEC: number
   CLI_BACKEND: "claude" | "codex"
+  ISSUE_SYNC_ENABLED: boolean
+  ISSUE_SYNC_LABELS: string | null
+  ISSUE_SYNC_INTERVAL_SEC: number
 }

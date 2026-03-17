@@ -69,6 +69,9 @@ export const config: Config = {
   CB_BACKOFF_SEC: Number(env("DEVPANE_CB_BACKOFF_SEC", "300")),
   CB_MAX_BACKOFF_SEC: Number(env("DEVPANE_CB_MAX_BACKOFF_SEC", "3600")),
   CLI_BACKEND: env("CLI_BACKEND", "claude") as "claude" | "codex",
+  ISSUE_SYNC_ENABLED: env("ISSUE_SYNC_ENABLED", "false") === "true",
+  ISSUE_SYNC_LABELS: optionalEnv("ISSUE_SYNC_LABELS"),
+  ISSUE_SYNC_INTERVAL_SEC: Number(env("ISSUE_SYNC_INTERVAL_SEC", "3600")),
 }
 
 export function parseCmd(cmd: string): { bin: string; args: string[] } {

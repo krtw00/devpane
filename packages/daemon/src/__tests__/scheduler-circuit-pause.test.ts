@@ -27,9 +27,9 @@ vi.mock("../circuit-breaker.js", () => ({
 vi.mock("../ws.js", () => ({
   broadcast: vi.fn(),
 }))
-
 vi.mock("../db.js", () => ({
   getNextPending: vi.fn(() => null),
+  claimNextPending: vi.fn(() => undefined),
   getTasksByStatus: vi.fn(() => []),
   startTask: vi.fn(),
   finishTask: vi.fn(),

@@ -1,6 +1,6 @@
 import type { ActiveHours, Task, PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
-import { getNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, recoverOrphanedTasks } from "./db.js"
+import { getNextPending, claimNextPending, getTasksByStatus, startTask, finishTask, revertToPending, requeueTask, getRetryCount, appendLog, updateTaskCost, recoverOrphanedTasks } from "./db.js"
 import { createWorktree, removeWorktree, createPullRequest, autoMergePr, pruneWorktrees, countOpenPrs, pullMain } from "./worktree.js"
 import { runWorker } from "./worker.js"
 import { collectFacts } from "./facts.js"
@@ -18,6 +18,7 @@ import { remember } from "./memory.js"
 import { recordTaskMetrics } from "./spc.js"
 import { getNotifier } from "./notifier-factory.js"
 import { runCredentialHealthChecks } from "./health-check.js"
+import { syncIssues } from "./issue-sync.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
 import { parseConstraints } from "./scheduler-plugins.js"
@@ -66,7 +67,7 @@ let alive = true
 let paused = false
 let rateLimitHits = 0
 let pmConsecutiveFailures = 0
-let currentTaskPromise: Promise<void> | null = null
+const runningWorkers = new Set<Promise<void>>()
 let lastPruneAt = 0
 let prevOpenPrs: number | null = null
 let lastPullMainAt = 0
@@ -74,32 +75,43 @@ const PULL_MAIN_INTERVAL_MS = 5 * 60 * 1000
 const CREDENTIAL_HEALTH_CHECK_INTERVAL_MS = 60 * 60 * 1000
 const ENABLE_CREDENTIAL_HEALTH_CHECKS = process.env.VITEST !== "true"
 let lastCredentialHealthCheckAt = 0
+let lastIssueSyncAt = 0
 
 // --- Agent state tracking for Shogun UI ---
 export type AgentStatus = "idle" | "running"
 export type PipelineStageLabel = "pm" | "gate1" | "tester" | "gate2" | "worker" | "gate3" | "pr" | null
 
-let pmStatus: AgentStatus = "idle"
-let workerStatus: AgentStatus = "idle"
-let currentTaskId: string | null = null
-let currentTaskTitle: string | null = null
-let currentStage: PipelineStageLabel = null
-let currentTaskStartedAt: string | null = null
-
-function resetWorkerState(): void {
-  workerStatus = "idle"
-  currentTaskId = null
-  currentTaskTitle = null
-  currentStage = null
-  currentTaskStartedAt = null
+export interface WorkerState {
+  status: AgentStatus
+  taskId: string | null
+  taskTitle: string | null
+  stage: PipelineStageLabel
+  startedAt: string | null
 }
 
-export function setCurrentStage(stage: PipelineStageLabel, taskId?: string, taskTitle?: string): void {
-  currentStage = stage
-  if (taskId !== undefined) currentTaskId = taskId
-  if (taskTitle !== undefined) currentTaskTitle = taskTitle
+let pmStatus: AgentStatus = "idle"
+const workerStates = new Map<string, WorkerState>()
+
+function getWorkerState(workerId: string): WorkerState {
+  let state = workerStates.get(workerId)
+  if (!state) {
+    state = { status: "idle", taskId: null, taskTitle: null, stage: null, startedAt: null }
+    workerStates.set(workerId, state)
+  }
+  return state
+}
+
+function resetWorkerState(workerId: string): void {
+  workerStates.set(workerId, { status: "idle", taskId: null, taskTitle: null, stage: null, startedAt: null })
+}
+
+export function setCurrentStage(stage: PipelineStageLabel, taskId?: string, taskTitle?: string, workerId = "worker-0"): void {
+  const state = getWorkerState(workerId)
+  state.stage = stage
+  if (taskId !== undefined) state.taskId = taskId
+  if (taskTitle !== undefined) state.taskTitle = taskTitle
   if (stage) {
-    broadcast("scheduler:stage", { stage, taskId: currentTaskId, taskTitle: currentTaskTitle })
+    broadcast("scheduler:stage", { stage, taskId: state.taskId, taskTitle: state.taskTitle, workerId })
   }
 }
 
@@ -109,6 +121,10 @@ export { KAIZEN_THRESHOLD, checkKaizenAnalysis, resetKaizenCounter, setKaizenCou
 import { getEffectMeasureCounter } from "./scheduler-plugins.js"
 
 export function getSchedulerState() {
+  const workers = Array.from(workerStates.entries()).map(([id, state]) => ({ id, ...state }))
+  // For backward compatibility, return worker-0 as 'worker'
+  const worker0 = getWorkerState("worker-0")
+
   return {
     alive,
     paused,
@@ -119,12 +135,13 @@ export function getSchedulerState() {
     activeHours: config.ACTIVE_HOURS,
     pm: { status: pmStatus },
     worker: {
-      status: workerStatus,
-      taskId: currentTaskId,
-      taskTitle: currentTaskTitle,
-      stage: currentStage,
-      startedAt: currentTaskStartedAt,
+      status: worker0.status,
+      taskId: worker0.taskId,
+      taskTitle: worker0.taskTitle,
+      stage: worker0.stage,
+      startedAt: worker0.startedAt,
     },
+    workers,
   }
 }
 
@@ -152,12 +169,12 @@ export async function stopScheduler(): Promise<void> {
   alive = false
   stopDailyReportTimer()
 
-  if (currentTaskPromise) {
+  if (runningWorkers.size > 0) {
     await Promise.race([
-      currentTaskPromise,
+      Promise.all([...runningWorkers]),
       sleep(SHUTDOWN_TIMEOUT_MS),
     ])
-    currentTaskPromise = null
+    runningWorkers.clear()
   }
 
   // Revert any remaining running tasks to pending
@@ -216,41 +233,43 @@ function taskToPmOutput(task: Task): PmOutput {
   }
 }
 
-export async function executeTask(task: Task): Promise<void> {
+export async function executeTask(task: Task, workerId = "worker-0"): Promise<void> {
   const taskStartTime = Date.now()
-  workerStatus = "running"
-  currentTaskId = task.id
-  currentTaskTitle = task.title
-  currentTaskStartedAt = new Date().toISOString()
+  const state = getWorkerState(workerId)
+  state.status = "running"
+  state.taskId = task.id
+  state.taskTitle = task.title
+  state.startedAt = new Date().toISOString()
 
   // Gate 1: 方針チェック（Worker実行前に弾く）
-  setCurrentStage("gate1", task.id, task.title)
+  setCurrentStage("gate1", task.id, task.title, workerId)
   const gate1 = await runGate1(task)
   if (gate1.verdict === "kill") {
-    console.log(`[scheduler] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
+    console.log(`[${workerId}] Gate 1 KILL task ${task.id}: ${gate1.reasons.join("; ")}`)
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "kill", reason: gate1.reasons.join("; ") })
     remember("lesson", `[gate1:kill] ${gate1.reasons.join("; ")}`, task.id)
     finishTask(task.id, "failed", JSON.stringify({ gate1, error: gate1.reasons.join("; ") }))
     recordTaskMetrics(task.id, 0, Date.now() - taskStartTime, 0)
     emit({ type: "task.failed", taskId: task.id, rootCause: "scope_creep" })
     broadcast("task:updated", { id: task.id, status: "failed" })
-    resetWorkerState()
+    resetWorkerState(workerId)
     return
   }
   if (gate1.verdict === "recycle") {
-    console.log(`[scheduler] Gate 1 RECYCLE task ${task.id}: ${gate1.reasons.join("; ")}`)
+    console.log(`[${workerId}] Gate 1 RECYCLE task ${task.id}: ${gate1.reasons.join("; ")}`)
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "recycle", reason: gate1.reasons.join("; ") })
     appendLog(task.id, "gate1", `[recycle] ${gate1.reasons.join("; ")}`)
     requeueTask(task.id)
     broadcast("task:updated", { id: task.id, status: "pending" })
-    resetWorkerState()
+    resetWorkerState(workerId)
     return
   }
   emit({ type: "gate.passed", taskId: task.id, gate: "gate1" })
 
-  const workerId = "worker-0"
-  console.log(`[scheduler] starting task ${task.id}: ${task.title}`)
-  startTask(task.id, workerId)
+  console.log(`[${workerId}] starting task ${task.id}: ${task.title}`)
+  if (task.status !== "running") {
+    startTask(task.id, workerId)
+  }
   broadcast("task:updated", { id: task.id, status: "running", assigned_to: workerId })
 
   let worktreePath: string
@@ -258,52 +277,52 @@ export async function executeTask(task: Task): Promise<void> {
     worktreePath = createWorktree(task.id)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[scheduler] worktree creation failed: ${msg}`)
+    console.error(`[${workerId}] worktree creation failed: ${msg}`)
     finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
     emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
     broadcast("task:updated", { id: task.id, status: "failed" })
-    resetWorkerState()
+    resetWorkerState(workerId)
     return
   }
 
   try {
     // Tester: テスト先行生成
-    setCurrentStage("tester")
+    setCurrentStage("tester", undefined, undefined, workerId)
     const spec = taskToPmOutput(task)
     let testFiles: string[] = []
     const GATE2_MAX_RETRIES = 1
 
     for (let testerAttempt = 0; testerAttempt <= GATE2_MAX_RETRIES; testerAttempt++) {
-      console.log(`[scheduler] running tester for task ${task.id}${testerAttempt > 0 ? ` (retry ${testerAttempt})` : ""}`)
+      console.log(`[${workerId}] running tester for task ${task.id}${testerAttempt > 0 ? ` (retry ${testerAttempt})` : ""}`)
       appendLog(task.id, "tester", `[start] tester attempt ${testerAttempt + 1}`)
       const testerResult = await runTester(spec, worktreePath, task.id)
       testFiles = testerResult.testFiles
 
       if (testerResult.timedOut) {
-        console.error(`[scheduler] tester timed out for task ${task.id}, skipping worker`)
+        console.error(`[${workerId}] tester timed out for task ${task.id}, skipping worker`)
         appendLog(task.id, "tester", `[timeout] tester timed out, skipping worker`)
         finishTask(task.id, "failed", JSON.stringify({ error: "tester_timeout" }))
         recordTaskMetrics(task.id, 0, Date.now() - taskStartTime, 0)
         emit({ type: "task.failed", taskId: task.id, rootCause: "timeout" })
         broadcast("task:updated", { id: task.id, status: "failed" })
         removeWorktree(task.id)
-        resetWorkerState()
+        resetWorkerState(workerId)
         return
       }
 
       if (testerResult.exit_code !== 0) {
-        console.warn(`[scheduler] tester exited with code ${testerResult.exit_code} for task ${task.id}`)
+        console.warn(`[${workerId}] tester exited with code ${testerResult.exit_code} for task ${task.id}`)
         appendLog(task.id, "tester", `[warn] exit_code=${testerResult.exit_code}`)
       }
 
       // Gate 2: テストファイル品質検証
-      setCurrentStage("gate2")
+      setCurrentStage("gate2", undefined, undefined, workerId)
       const gate2 = runGate2(spec, testFiles, worktreePath)
 
       if (gate2.verdict === "go") {
         emit({ type: "gate.passed", taskId: task.id, gate: "gate2" })
         appendLog(task.id, "gate2", `[pass] ${testFiles.length} test files validated`)
-        console.log(`[scheduler] Gate 2 PASS task ${task.id}: ${testFiles.length} test files`)
+        console.log(`[${workerId}] Gate 2 PASS task ${task.id}: ${testFiles.length} test files`)
         break
       }
 
@@ -312,31 +331,31 @@ export async function executeTask(task: Task): Promise<void> {
       if (testerAttempt < GATE2_MAX_RETRIES) {
         emit({ type: "gate.rejected", taskId: task.id, gate: "gate2", verdict: "recycle", reason })
         appendLog(task.id, "gate2", `[recycle] ${reason} — retrying tester`)
-        console.log(`[scheduler] Gate 2 RECYCLE task ${task.id}: ${reason}`)
+        console.log(`[${workerId}] Gate 2 RECYCLE task ${task.id}: ${reason}`)
       } else {
         // リトライ上限到達 — テストなしでWorker続行
         emit({ type: "gate.rejected", taskId: task.id, gate: "gate2", verdict: "recycle", reason: `${reason} (max tester retries)` })
         appendLog(task.id, "gate2", `[recycle→skip] ${reason} — proceeding without tests`)
-        console.warn(`[scheduler] Gate 2 max retries, proceeding without tests for task ${task.id}`)
+        console.warn(`[${workerId}] Gate 2 max retries, proceeding without tests for task ${task.id}`)
         testFiles = []
       }
     }
 
-    setCurrentStage("worker")
+    setCurrentStage("worker", undefined, undefined, workerId)
     const startTime = Date.now()
     const result = await runWorker(task, worktreePath, testFiles)
     const executionMs = Date.now() - startTime
     const facts = collectFacts(task.id, task.title, worktreePath, result.exit_code)
 
     // Gate 3: Observable Facts判定（原理1: 判定はコード）
-    setCurrentStage("gate3")
+    setCurrentStage("gate3", undefined, undefined, workerId)
     const gate3 = runGate3(task.id, facts)
 
     let prUrl: string | null = null
     let prMerged = false
 
     if (gate3.verdict === "kill") {
-      console.log(`[scheduler] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
+      console.log(`[${workerId}] Gate 3 KILL task ${task.id}: ${gate3.reasons.join("; ")}`)
       emit({ type: "gate.rejected", taskId: task.id, gate: "gate3", verdict: "kill", reason: gate3.reasons.join("; ") })
       remember("lesson", `[gate3:kill] ${gate3.reasons.join("; ")}`, task.id)
       finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: gate3 }))
@@ -355,12 +374,12 @@ export async function executeTask(task: Task): Promise<void> {
       recordTaskMetrics(task.id, result.cost_usd, executionMs, diffSize)
 
       if (retryCount < config.MAX_RETRIES) {
-        console.log(`[scheduler] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
+        console.log(`[${workerId}] Gate 3 RECYCLE task ${task.id} (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         requeueTask(task.id)
         appendLog(task.id, "system", `[gate3] recycled (retry ${retryCount + 1}/${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         broadcast("task:updated", { id: task.id, status: "pending" })
       } else {
-        console.log(`[scheduler] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
+        console.log(`[${workerId}] Gate 3 RECYCLE→KILL task ${task.id} (max retries ${config.MAX_RETRIES}): ${gate3.reasons.join("; ")}`)
         finishTask(task.id, "failed", JSON.stringify({ ...facts, gate3: { ...gate3, verdict: "kill", reasons: [...gate3.reasons, `max retries (${config.MAX_RETRIES}) exceeded`] } }))
         emit({ type: "task.failed", taskId: task.id, rootCause: gate3.failure?.root_cause ?? "unknown" })
         await runHooks("task.failed", { task, rootCause: gate3.failure?.root_cause ?? "unknown" })
@@ -372,31 +391,31 @@ export async function executeTask(task: Task): Promise<void> {
       updateTaskCost(task.id, result.cost_usd, result.num_turns)
       const diffSize = facts.diff_stats.additions + facts.diff_stats.deletions
 
-      console.log(`[scheduler] task ${task.id} done: ${facts.files_changed.length} files changed`)
+      console.log(`[${workerId}] task ${task.id} done: ${facts.files_changed.length} files changed`)
 
       // PR作成 → 自動マージ
-      setCurrentStage("pr")
+      setCurrentStage("pr", undefined, undefined, workerId)
       if (facts.commit_hash) {
         prUrl = createPullRequest(task.id, task.title, facts)
         if (prUrl) {
-          console.log(`[scheduler] PR created for task ${task.id}: ${prUrl}`)
+          console.log(`[${workerId}] PR created for task ${task.id}: ${prUrl}`)
           appendLog(task.id, "system", `[pr] ${prUrl}`)
           emit({ type: "pr.created", taskId: task.id, url: prUrl })
 
           // Gate3通過済みなので自動マージ → baseブランチを最新化
           const merged = autoMergePr(task.id)
           if (merged) {
-            console.log(`[scheduler] auto-merged PR for task ${task.id}`)
+            console.log(`[${workerId}] auto-merged PR for task ${task.id}`)
             appendLog(task.id, "system", `[auto-merge] done`)
             prMerged = true
             pullMain()
           } else {
-            console.warn(`[scheduler] auto-merge failed for task ${task.id}, PR remains open`)
+            console.warn(`[${workerId}] auto-merge failed for task ${task.id}, PR remains open`)
             appendLog(task.id, "system", `[auto-merge] failed – PR remains open`)
             emit({ type: "pr.merge_failed", taskId: task.id, url: prUrl })
           }
         } else {
-          console.error(`[scheduler] PR creation failed for task ${task.id}`)
+          console.error(`[${workerId}] PR creation failed for task ${task.id}`)
           emit({ type: "pr.failed", taskId: task.id })
         }
       }
@@ -428,7 +447,7 @@ export async function executeTask(task: Task): Promise<void> {
       }
     }
 
-    console.log(`[scheduler] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
+    console.log(`[${workerId}] task ${task.id} cost: $${result.cost_usd.toFixed(4)}, turns: ${result.num_turns}`)
 
     if (isRateLimitError(result.result_text)) {
       rateLimitHits++
@@ -441,12 +460,12 @@ export async function executeTask(task: Task): Promise<void> {
     const keepBranch = !!prUrl && !prMerged
     try {
       removeWorktree(task.id, keepBranch)
-      console.log(`[scheduler] cleaned up worktree for task ${task.id}${keepBranch ? " (branch kept for PR)" : ""}`)
+      console.log(`[${workerId}] cleaned up worktree for task ${task.id}${keepBranch ? " (branch kept for PR)" : ""}`)
     } catch (cleanupErr) {
       const cleanupMsg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
-      console.warn(`[scheduler] worktree cleanup failed for ${task.id}: ${cleanupMsg}`)
+      console.warn(`[${workerId}] worktree cleanup failed for ${task.id}: ${cleanupMsg}`)
     }
-    resetWorkerState()
+    resetWorkerState(workerId)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
 
@@ -456,7 +475,7 @@ export async function executeTask(task: Task): Promise<void> {
       broadcast("task:updated", { id: task.id, status: "pending" })
       circuitBreaker.recordFailure()
     } else {
-      console.error(`[scheduler] worker error: ${msg}`)
+      console.error(`[${workerId}] worker error: ${msg}`)
       finishTask(task.id, "failed", JSON.stringify({ exit_code: 1, error: msg }))
       emit({ type: "task.failed", taskId: task.id, rootCause: "env_issue" })
       await runHooks("task.failed", { task, rootCause: "env_issue" })
@@ -475,7 +494,7 @@ export async function executeTask(task: Task): Promise<void> {
     } catch {
       // ignore cleanup errors on failure path
     }
-    resetWorkerState()
+    resetWorkerState(workerId)
   }
 }
 
@@ -639,37 +658,76 @@ export async function startScheduler(): Promise<void> {
 
     if (openPrs >= config.MAX_OPEN_PRS) {
       console.log(`[scheduler] WIP limit: ${openPrs} open PRs (max ${config.MAX_OPEN_PRS}), waiting...`)
+      if (runningWorkers.size > 0) {
+        await Promise.race([...runningWorkers, sleep(1000)])
+      } else {
+        for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
+      }
+      continue
+    }
+
+    // Issue Sync: PM呼び出し前にGitHub Issuesからタスクを取り込む
+    if (config.ISSUE_SYNC_ENABLED && Date.now() - lastIssueSyncAt >= config.ISSUE_SYNC_INTERVAL_SEC * 1000) {
+      lastIssueSyncAt = Date.now()
+      try {
+        syncIssues()
+        console.log("[scheduler] issue sync completed")
+      } catch (err) {
+        console.error(`[scheduler] issue sync failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // --- Parallel Worker Loop ---
+    while (runningWorkers.size < config.WORKER_CONCURRENCY && alive && !paused) {
+      // Find an available workerId
+      let workerId = "worker-0"
+      for (let i = 0; i < config.WORKER_CONCURRENCY; i++) {
+        const id = `worker-${i}`
+        if (getWorkerState(id).status === "idle") {
+          workerId = id
+          break
+        }
+      }
+
+      // 1. Check for pending tasks and claim one
+      let task = claimNextPending(workerId)
+
+      // 2. If no pending tasks, ask PM to generate some (exclusive)
+      if (!task && pmStatus === "idle") {
+        console.log("[scheduler] queue empty, asking PM for tasks...")
+        const created = await callPm()
+
+        if (created.length > 0) {
+          console.log(`[scheduler] PM created ${created.length} tasks`)
+          for (const t of created) broadcast("task:created", t)
+          task = claimNextPending(workerId)
+        }
+      }
+
+      if (task) {
+        // 3. Execute the task (non-blocking)
+        const promise = executeTask(task, workerId).finally(() => {
+          runningWorkers.delete(promise)
+        })
+        runningWorkers.add(promise)
+      } else {
+        // No more tasks to claim
+        break
+      }
+    }
+
+    if (runningWorkers.size === 0 && alive && !paused) {
+      // No task and no workers running: idle
+      console.log(`[scheduler] no tasks available, idling ${config.IDLE_INTERVAL_SEC}s`)
       for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
       continue
     }
 
-    // 1. Check for pending tasks
-    let task = getNextPending()
-
-    // 2. If no pending tasks, ask PM to generate some
-    if (!task) {
-      console.log("[scheduler] queue empty, asking PM for tasks...")
-      const created = await callPm()
-
-      if (created.length === 0) {
-        console.log(`[scheduler] PM returned no tasks, idling ${config.IDLE_INTERVAL_SEC}s`)
-        for (let i = 0; i < config.IDLE_INTERVAL_SEC && alive && !paused; i++) await sleep(1000)
-        continue
-      }
-
-      console.log(`[scheduler] PM created ${created.length} tasks`)
-      for (const t of created) broadcast("task:created", t)
-      task = getNextPending()
-      if (!task) continue
-    }
-
-    // 3. Execute the task
-    currentTaskPromise = executeTask(task)
-    await currentTaskPromise
-    currentTaskPromise = null
-
-    // 4. Brief pause between tasks to avoid hammering
-    await sleep(1000)
+    // 4. Wait for next iteration: either a worker finished or some time passed
+    await Promise.race([
+      ...runningWorkers,
+      sleep(1000),
+    ])
   }
 
   console.log("[scheduler] loop stopped")

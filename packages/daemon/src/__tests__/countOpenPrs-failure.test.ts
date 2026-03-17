@@ -25,9 +25,9 @@ vi.mock("../circuit-breaker.js", () => ({
 vi.mock("../ws.js", () => ({
   broadcast: vi.fn(),
 }))
-
 vi.mock("../db.js", () => ({
   getNextPending: vi.fn(() => null),
+  claimNextPending: vi.fn(() => undefined),
   getTasksByStatus: vi.fn(() => []),
   startTask: vi.fn(),
   finishTask: vi.fn(),
@@ -178,7 +178,7 @@ describe("countOpenPrs失敗時のWIP制限（安全側に倒す）", () => {
   })
 
   it("countOpenPrsがnullを返す（gh CLI失敗）場合、タスク取得をスキップする", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     // countOpenPrsがnullを返す = gh CLI失敗 → 安全側に倒してタスク開始しない
@@ -186,12 +186,12 @@ describe("countOpenPrs失敗時のWIP制限（安全側に倒す）", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    // countOpenPrs失敗時はgetNextPendingが呼ばれない（タスク取得をスキップ）
-    expect(getNextPending).not.toHaveBeenCalled()
+    // countOpenPrs失敗時はclaimNextPendingが呼ばれない（タスク取得をスキップ）
+    expect(claimNextPending).not.toHaveBeenCalled()
   }, 15000)
 
   it("countOpenPrsが0を返す場合、通常通りタスク取得を試みる", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     // countOpenPrsが0を返す = オープンPRなし → タスク実行可
@@ -199,12 +199,12 @@ describe("countOpenPrs失敗時のWIP制限（安全側に倒す）", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    // WIP制限内なのでgetNextPendingが呼ばれる
-    expect(getNextPending).toHaveBeenCalled()
+    // WIP制限内なのでclaimNextPendingが呼ばれる
+    expect(claimNextPending).toHaveBeenCalled()
   }, 15000)
 
   it("countOpenPrsがMAX_OPEN_PRS以上を返す場合、タスク取得をスキップする", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     // countOpenPrsが1を返す = WIP上限到達（MAX_OPEN_PRS=1）
@@ -212,7 +212,7 @@ describe("countOpenPrs失敗時のWIP制限（安全側に倒す）", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    // WIP上限到達でgetNextPendingは呼ばれない
-    expect(getNextPending).not.toHaveBeenCalled()
+    // WIP上限到達でclaimNextPendingは呼ばれない
+    expect(claimNextPending).not.toHaveBeenCalled()
   }, 15000)
 })

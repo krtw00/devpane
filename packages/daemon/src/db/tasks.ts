@@ -23,6 +23,21 @@ export function getNextPending(): Task | undefined {
   return getDb().prepare(`SELECT * FROM tasks WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1`).get() as Task | undefined
 }
 
+export function claimNextPending(workerId: string): Task | undefined {
+  const now = new Date().toISOString()
+  return getDb().prepare(`
+    UPDATE tasks
+    SET status = 'running', started_at = ?, assigned_to = ?
+    WHERE id = (
+      SELECT id FROM tasks
+      WHERE status = 'pending'
+      ORDER BY priority DESC, created_at ASC
+      LIMIT 1
+    )
+    RETURNING *
+  `).get(now, workerId) as Task | undefined
+}
+
 export function getTask(id: string): Task | undefined {
   return getDb().prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as Task | undefined
 }

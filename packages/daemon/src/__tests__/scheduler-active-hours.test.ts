@@ -28,6 +28,7 @@ vi.mock("../ws.js", () => ({
 
 vi.mock("../db.js", () => ({
   getNextPending: vi.fn(() => null),
+  claimNextPending: vi.fn(() => undefined),
   getTasksByStatus: vi.fn(() => []),
   startTask: vi.fn(),
   finishTask: vi.fn(),
@@ -158,19 +159,19 @@ describe("startScheduler: ACTIVE_HOURS統合", () => {
   })
 
   it("ACTIVE_HOURS未設定なら通常通りタスク取得を試みる", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     mockConfig.ACTIVE_HOURS = null
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    // ACTIVE_HOURS未設定 → getNextPendingが呼ばれる（タスク取得を試みた）
-    expect(getNextPending).toHaveBeenCalled()
+    // ACTIVE_HOURS未設定 → claimNextPendingが呼ばれる（タスク取得を試みた）
+    expect(claimNextPending).toHaveBeenCalled()
   }, 15000)
 
   it("時間外ではタスク取得をスキップしIDLE_INTERVAL_SEC待機する", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     // 09-17 の設定で、現在時刻を20時にする → 時間外
@@ -179,8 +180,8 @@ describe("startScheduler: ACTIVE_HOURS統合", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    // 時間外 → getNextPendingは呼ばれない
-    expect(getNextPending).not.toHaveBeenCalled()
+    // 時間外 → claimNextPendingは呼ばれない
+    expect(claimNextPending).not.toHaveBeenCalled()
   }, 15000)
 
   it("時間外ではscheduler.outside_hoursイベントを発行する", async () => {
@@ -198,7 +199,7 @@ describe("startScheduler: ACTIVE_HOURS統合", () => {
   }, 15000)
 
   it("時間内なら通常通りタスク取得を試みる", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     // 09-17 の設定で、現在時刻を12時にする → 時間内
@@ -207,12 +208,12 @@ describe("startScheduler: ACTIVE_HOURS統合", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    // 時間内 → getNextPendingが呼ばれる
-    expect(getNextPending).toHaveBeenCalled()
+    // 時間内 → claimNextPendingが呼ばれる
+    expect(claimNextPending).toHaveBeenCalled()
   }, 15000)
 
   it("日跨ぎ（22-08）: 23時は時間内としてタスク取得を試みる", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
     mockConfig.ACTIVE_HOURS = { start: 22, end: 8 }
@@ -220,11 +221,11 @@ describe("startScheduler: ACTIVE_HOURS統合", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    expect(getNextPending).toHaveBeenCalled()
+    expect(claimNextPending).toHaveBeenCalled()
   }, 15000)
 
   it("日跨ぎ（22-08）: 12時は時間外としてスキップする", async () => {
-    const { getNextPending } = await import("../db.js")
+    const { claimNextPending } = await import("../db.js")
     const { emit } = await import("../events.js")
     const { startScheduler, stopScheduler } = await import("../scheduler.js")
 
@@ -233,7 +234,7 @@ describe("startScheduler: ACTIVE_HOURS統合", () => {
 
     await runOneIteration(startScheduler, stopScheduler)
 
-    expect(getNextPending).not.toHaveBeenCalled()
+    expect(claimNextPending).not.toHaveBeenCalled()
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({ type: "scheduler.outside_hours" }),
     )

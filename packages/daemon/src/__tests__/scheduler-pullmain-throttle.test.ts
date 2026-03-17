@@ -42,13 +42,14 @@ vi.mock("../worktree.js", () => ({
 }))
 
 const mockGetNextPending = vi.fn(() => null)
+const mockClaimNextPending = vi.fn(() => undefined)
 vi.mock("../db.js", () => ({
   getNextPending: (...args: unknown[]) => mockGetNextPending(...args),
+  claimNextPending: (...args: unknown[]) => mockClaimNextPending(...args),
   getTasksByStatus: vi.fn(() => []),
   startTask: vi.fn(),
   finishTask: vi.fn(),
   revertToPending: vi.fn(),
-  requeueTask: vi.fn(),
   getRetryCount: vi.fn(() => 0),
   appendLog: vi.fn(),
   updateTaskCost: vi.fn(),
