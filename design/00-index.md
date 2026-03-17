@@ -7,7 +7,7 @@ ai_summary: "DevPane設計ドキュメントへのナビゲーションハブ"
 # 設計ドキュメントインデックス
 
 > Status: Active
-> 最終更新: 2026-03-15
+> 最終更新: 2026-03-17
 
 本ドキュメントは、設計ドキュメント全体のナビゲーションを提供する。
 
@@ -80,6 +80,7 @@ flowchart LR
 |--------------|------|
 | [glossary.md](./99-appendix/glossary.md) | 用語集 |
 | [brainstorm_2026-03-10.md](./99-appendix/brainstorm_2026-03-10.md) | 初期ブレスト整理・市場比較・Shogun/AgentMine分析 |
+| [multi-worker-orchestration_2026-03-17.md](./99-appendix/multi-worker-orchestration_2026-03-17.md) | multi-worker 化の移行メモ・役割整理・導入順序 |
 
 ---
 
