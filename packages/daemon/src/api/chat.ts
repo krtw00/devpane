@@ -1,6 +1,6 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import type { MemoryCategory } from "@devpane/shared"
-import { createTask } from "../db.js"
+import { createTask, insertChatMessage, getChatMessages } from "../db.js"
 import { remember } from "../memory.js"
 import { broadcast } from "../ws.js"
 
@@ -8,7 +8,13 @@ const validCategories: MemoryCategory[] = ["decision", "lesson"]
 
 export const chatApi = new Hono()
 
-chatApi.post("/", async (c) => {
+function parseLimit(raw: string | undefined): number {
+  const parsed = Number(raw ?? 50)
+  if (!Number.isFinite(parsed) || parsed <= 0) return 50
+  return Math.min(Math.floor(parsed), 200)
+}
+
+async function handleSendMessage(c: Context) {
   const body = await c.req.json<{ message: string; category?: string }>()
   if (!body.message) {
     return c.json({ error: "message required" }, 400)
@@ -24,6 +30,7 @@ chatApi.post("/", async (c) => {
     "human",
     100,
   )
+  const chatMessage = insertChatMessage("human", body.message, task.id)
 
   if (category) {
     const memory = remember(category, body.message, task.id)
@@ -32,9 +39,11 @@ chatApi.post("/", async (c) => {
   }
 
   broadcast("chat", {
-    message: body.message,
-    task_id: task.id,
-    created_at: task.created_at,
+    id: chatMessage.id,
+    role: chatMessage.role,
+    message: chatMessage.message,
+    task_id: chatMessage.task_id,
+    created_at: chatMessage.created_at,
     category,
   })
 
@@ -42,4 +51,13 @@ chatApi.post("/", async (c) => {
 
   console.log(`[chat] human message → task ${task.id} (priority=100)`)
   return c.json(task, 201)
+}
+
+chatApi.get("/messages", (c) => {
+  const limit = parseLimit(c.req.query("limit"))
+  const before = c.req.query("before")
+  return c.json(getChatMessages(limit, before))
 })
+
+chatApi.post("/messages", handleSendMessage)
+chatApi.post("/", handleSendMessage)

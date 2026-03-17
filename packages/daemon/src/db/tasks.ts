@@ -72,6 +72,14 @@ export function updateTaskCost(id: string, costUsd: number, tokensUsed: number):
   getDb().prepare(`UPDATE tasks SET cost_usd = ?, tokens_used = ? WHERE id = ?`).run(costUsd, tokensUsed, id)
 }
 
+export function updateTaskPriority(id: string, priority: number): void {
+  getDb().prepare(`UPDATE tasks SET priority = ? WHERE id = ?`).run(priority, id)
+}
+
+export function cancelTask(id: string): void {
+  finishTask(id, "failed", null)
+}
+
 export function appendLog(taskId: string, agent: string, message: string): void {
   try {
     const id = ulid()

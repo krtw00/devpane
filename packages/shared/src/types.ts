@@ -53,6 +53,15 @@ export type TaskLog = {
   timestamp: string // ISO 8601
 }
 
+// Chat message
+export type ChatMessage = {
+  id: string // ULID
+  role: "human" | "system"
+  message: string
+  task_id: string | null
+  created_at: string // ISO 8601
+}
+
 // PM output — PMが返すタスクリスト
 export type PmOutput = {
   tasks: { title: string; description: string; priority: number; constraints?: string[]; invariants?: string[] }[]
