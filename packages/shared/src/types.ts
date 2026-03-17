@@ -157,7 +157,16 @@ export type Config = {
   CB_BACKOFF_SEC: number
   CB_MAX_BACKOFF_SEC: number
   CLI_BACKEND: "claude" | "codex"
+  LLM_BACKEND: "cli" | "openai-compatible"
+  LLM_API_KEY: string | null
+  LLM_BASE_URL: string | null
+  LLM_MODEL: string | null
+  LLM_INPUT_PRICE: number | null
+  LLM_OUTPUT_PRICE: number | null
   ISSUE_SYNC_ENABLED: boolean
   ISSUE_SYNC_LABELS: string | null
   ISSUE_SYNC_INTERVAL_SEC: number
+  MONTHLY_COST_BUDGET_JPY: number | null
+  DAILY_COST_BUDGET_JPY: number | null
+  USD_JPY_RATE: number
 }

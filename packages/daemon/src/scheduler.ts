@@ -18,6 +18,7 @@ import { remember } from "./memory.js"
 import { recordTaskMetrics } from "./spc.js"
 import { getNotifier } from "./notifier-factory.js"
 import { runCredentialHealthChecks } from "./health-check.js"
+import { isBudgetExceeded, checkBudget } from "./cost-guard.js"
 import { syncIssues } from "./issue-sync.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
@@ -607,6 +608,18 @@ export async function startScheduler(): Promise<void> {
       } catch (err) {
         console.error(`[scheduler] credential health check execution failed: ${err instanceof Error ? err.message : String(err)}`)
       }
+    }
+
+    // Budget guard
+    if (isBudgetExceeded()) {
+      const status = checkBudget()
+      paused = true
+      const message = `[scheduler] budget exceeded (${status.reason}): daily \u00a5${status.daily_cost_jpy.toFixed(0)}/${status.daily_budget_jpy ?? '\u221e'}, monthly \u00a5${status.monthly_cost_jpy.toFixed(0)}/${status.monthly_budget_jpy ?? '\u221e'}`
+      console.error(message)
+      appendLog("scheduler", "system", message)
+      broadcast("scheduler:state", { paused: true })
+      getNotifier().sendMessage(message).catch((err) => { console.warn("[notifier] failed:", err) })
+      continue
     }
 
     // Circuit Breaker: open状態なら全リクエストをスキップ

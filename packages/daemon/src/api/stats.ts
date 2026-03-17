@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { getCostStats, getPipelineStats, getRecentImprovements, getSpcMetrics } from "../db.js"
+import { checkBudget } from "../cost-guard.js"
 
 export const statsApi = new Hono()
 
@@ -19,6 +20,10 @@ statsApi.get("/spc/:metric", (c) => {
   const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 100) : 20
   const data = getSpcMetrics(metric, limit)
   return c.json(data)
+})
+
+statsApi.get("/budget", (c) => {
+  return c.json(checkBudget())
 })
 
 statsApi.get("/improvements", (c) => {

@@ -69,9 +69,18 @@ export const config: Config = {
   CB_BACKOFF_SEC: Number(env("DEVPANE_CB_BACKOFF_SEC", "300")),
   CB_MAX_BACKOFF_SEC: Number(env("DEVPANE_CB_MAX_BACKOFF_SEC", "3600")),
   CLI_BACKEND: env("CLI_BACKEND", "claude") as "claude" | "codex",
+  LLM_BACKEND: env("LLM_BACKEND", "cli") as "cli" | "openai-compatible",
+  LLM_API_KEY: optionalEnv("LLM_API_KEY"),
+  LLM_BASE_URL: optionalEnv("LLM_BASE_URL"),
+  LLM_MODEL: optionalEnv("LLM_MODEL"),
+  LLM_INPUT_PRICE: process.env.LLM_INPUT_PRICE ? Number(process.env.LLM_INPUT_PRICE) : null,
+  LLM_OUTPUT_PRICE: process.env.LLM_OUTPUT_PRICE ? Number(process.env.LLM_OUTPUT_PRICE) : null,
   ISSUE_SYNC_ENABLED: env("ISSUE_SYNC_ENABLED", "false") === "true",
   ISSUE_SYNC_LABELS: optionalEnv("ISSUE_SYNC_LABELS"),
   ISSUE_SYNC_INTERVAL_SEC: Number(env("ISSUE_SYNC_INTERVAL_SEC", "3600")),
+  MONTHLY_COST_BUDGET_JPY: process.env.MONTHLY_COST_BUDGET_JPY ? Number(process.env.MONTHLY_COST_BUDGET_JPY) : null,
+  DAILY_COST_BUDGET_JPY: process.env.DAILY_COST_BUDGET_JPY ? Number(process.env.DAILY_COST_BUDGET_JPY) : null,
+  USD_JPY_RATE: Number(env("USD_JPY_RATE", "150")),
 }
 
 export function parseCmd(cmd: string): { bin: string; args: string[] } {
