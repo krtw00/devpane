@@ -158,4 +158,34 @@ describe("config env overrides", () => {
     expect(config.CORS_ORIGIN).toEqual(["https://a.example", "https://b.example"])
     vi.unstubAllEnvs()
   })
+
+  // --- BACKUP_DIR / BACKUP_KEEP_COUNT ---
+
+  it("uses default BACKUP_KEEP_COUNT=7 when env not set", async () => {
+    delete process.env.BACKUP_KEEP_COUNT
+    const config = await loadConfig()
+    expect(config.BACKUP_KEEP_COUNT).toBe(7)
+  })
+
+  it("overrides BACKUP_KEEP_COUNT from env", async () => {
+    vi.stubEnv("BACKUP_KEEP_COUNT", "14")
+    const config = await loadConfig()
+    expect(config.BACKUP_KEEP_COUNT).toBe(14)
+    vi.unstubAllEnvs()
+  })
+
+  it("uses default BACKUP_DIR under PROJECT_ROOT when env not set", async () => {
+    delete process.env.BACKUP_DIR
+    vi.stubEnv("PROJECT_ROOT", "/tmp/devpane-root")
+    const config = await loadConfig()
+    expect(config.BACKUP_DIR).toBe("/tmp/devpane-root/.devpane-backups")
+    vi.unstubAllEnvs()
+  })
+
+  it("overrides BACKUP_DIR from env", async () => {
+    vi.stubEnv("BACKUP_DIR", "/tmp/custom-backups")
+    const config = await loadConfig()
+    expect(config.BACKUP_DIR).toBe("/tmp/custom-backups")
+    vi.unstubAllEnvs()
+  })
 })

@@ -14,6 +14,8 @@ import { memoriesApi } from "./api/memories.js"
 import { schedulerApi } from "./api/scheduler.js"
 import { prAgentApi } from "./api/pr-agent.js"
 import { configApi } from "./api/config.js"
+import { backupApi } from "./api/backup.js"
+import { healthApi } from "./api/health.js"
 import { attachWebSocket } from "./ws.js"
 import { startScheduler, stopScheduler } from "./scheduler.js"
 import { killAllWorkers } from "./worker.js"
@@ -68,6 +70,8 @@ export function createApp(): Hono {
   app.route("/api/scheduler", schedulerApi)
   app.route("/api/pr-agent", prAgentApi)
   app.route("/api/config", configApi)
+  app.route("/api/backups", backupApi)
+  app.route("/api/system", healthApi)
 
   // Static file serving for production
   const webDistPath = resolve(import.meta.dirname, "../../web/dist")

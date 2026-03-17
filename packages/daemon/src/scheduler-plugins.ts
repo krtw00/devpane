@@ -8,6 +8,7 @@ import { measureAllActive } from "./effect-measure.js"
 import { analyze } from "./kaizen.js"
 import { ulid } from "ulid"
 import { config } from "./config.js"
+import { createBackup, listBackups, pruneBackups } from "./backup.js"
 
 let taskCompletionsSinceLastMeasure = 0
 export const EFFECT_MEASURE_THRESHOLD = config.EFFECT_MEASURE_THRESHOLD
@@ -156,6 +157,27 @@ registerHook("task.completed", () => {
     if (archived > 0) {
       console.log(`[scheduler] memory cleanup: archived ${archived} old lessons`)
     }
+  }
+})
+
+const DAILY_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000
+
+registerHook("task.completed", () => {
+  try {
+    const backups = listBackups(config.BACKUP_DIR)
+    const latest = backups[0]
+    if (latest) {
+      const latestCreatedMs = Date.parse(latest.created)
+      if (!Number.isNaN(latestCreatedMs) && Date.now() - latestCreatedMs < DAILY_BACKUP_INTERVAL_MS) {
+        return
+      }
+    }
+
+    const backupPath = createBackup(config.DB_PATH, config.BACKUP_DIR)
+    pruneBackups(config.BACKUP_DIR, config.BACKUP_KEEP_COUNT)
+    console.log(`[scheduler] backup created: ${backupPath}`)
+  } catch (err) {
+    console.error(`[scheduler] backup failed:`, err instanceof Error ? err.message : err)
   }
 })
 

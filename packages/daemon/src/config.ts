@@ -38,6 +38,8 @@ export const config: Config = {
   COOLDOWN_INTERVAL_SEC: Number(env("COOLDOWN_INTERVAL_SEC", "300")),
   WORKER_CONCURRENCY: Number(env("WORKER_CONCURRENCY", "1")),
   DB_PATH: env("DB_PATH", `${env("PROJECT_ROOT", findGitRoot())}/devpane.db`),
+  BACKUP_DIR: env("BACKUP_DIR", `${env("PROJECT_ROOT", findGitRoot())}/.devpane-backups`),
+  BACKUP_KEEP_COUNT: Number(env("BACKUP_KEEP_COUNT", "7")),
   API_PORT: Number(env("API_PORT", "3001")),
   API_TOKEN: optionalEnv("API_TOKEN"),
   CORS_ORIGIN: parseCorsOrigins(process.env.CORS_ORIGIN),

@@ -117,6 +117,8 @@ export type Config = {
   COOLDOWN_INTERVAL_SEC: number
   WORKER_CONCURRENCY: number
   DB_PATH: string
+  BACKUP_DIR: string
+  BACKUP_KEEP_COUNT: number
   API_PORT: number
   API_TOKEN: string | null
   CORS_ORIGIN: string[] | null

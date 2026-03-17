@@ -13,3 +13,4 @@ dist/
 .nuxt/
 .output/
 .claude/worktrees/
+.devpane-backups/

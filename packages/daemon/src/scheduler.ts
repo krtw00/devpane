@@ -16,6 +16,8 @@ import { runHooks, type TaskCompletedData } from "./scheduler-hooks.js"
 import { sendMorningReport } from "./morning-report.js"
 import { remember } from "./memory.js"
 import { recordTaskMetrics } from "./spc.js"
+import { getNotifier } from "./notifier-factory.js"
+import { runCredentialHealthChecks } from "./health-check.js"
 // Side-effect import: registers all scheduler hooks (SPC, memory, effect measurement)
 import "./scheduler-plugins.js"
 import { parseConstraints } from "./scheduler-plugins.js"
@@ -69,6 +71,9 @@ let lastPruneAt = 0
 let prevOpenPrs: number | null = null
 let lastPullMainAt = 0
 const PULL_MAIN_INTERVAL_MS = 5 * 60 * 1000
+const CREDENTIAL_HEALTH_CHECK_INTERVAL_MS = 60 * 60 * 1000
+const ENABLE_CREDENTIAL_HEALTH_CHECKS = process.env.VITEST !== "true"
+let lastCredentialHealthCheckAt = 0
 
 // --- Agent state tracking for Shogun UI ---
 export type AgentStatus = "idle" | "running"
@@ -545,12 +550,44 @@ export async function startScheduler(): Promise<void> {
     console.log(`[scheduler] starting within active hours, shift started at ${shiftStartIso}`)
   }
   startDailyReportTimer()
+  lastCredentialHealthCheckAt = 0
 
   while (alive) {
     // Pause: 一時停止中はスリープしてスキップ
     if (paused) {
       await sleep(1000)
       continue
+    }
+
+    if (ENABLE_CREDENTIAL_HEALTH_CHECKS && Date.now() - lastCredentialHealthCheckAt >= CREDENTIAL_HEALTH_CHECK_INTERVAL_MS) {
+      lastCredentialHealthCheckAt = Date.now()
+      try {
+        const checks = runCredentialHealthChecks()
+        const okCount = checks.filter((check) => check.ok).length
+        const summary = checks.map((check) => `${check.name}: ${check.ok ? "ok" : "ng"} (${check.message})`).join(" | ")
+
+        if (okCount === 0) {
+          paused = true
+          const message = `[scheduler] credential health checks failed (0/${checks.length}); scheduler paused: ${summary}`
+          console.error(message)
+          appendLog("scheduler", "system", message)
+          broadcast("scheduler:state", { paused: true })
+          getNotifier().sendMessage(message).catch((err) => {
+            console.warn("[notifier] failed:", err)
+          })
+          continue
+        }
+
+        if (okCount < checks.length) {
+          if (okCount * 2 >= checks.length) {
+            console.warn(`[scheduler] credential health degraded (${okCount}/${checks.length}): ${summary}`)
+          } else {
+            console.error(`[scheduler] credential health critical (${okCount}/${checks.length}): ${summary}`)
+          }
+        }
+      } catch (err) {
+        console.error(`[scheduler] credential health check execution failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
 
     // Circuit Breaker: open状態なら全リクエストをスキップ
