@@ -128,4 +128,34 @@ describe("config env overrides", () => {
     expect(config.MEMORY_CLEANUP_THRESHOLD).toBe(25)
     vi.unstubAllEnvs()
   })
+
+  // --- API_TOKEN ---
+
+  it("uses null API_TOKEN when env not set", async () => {
+    delete process.env.API_TOKEN
+    const config = await loadConfig()
+    expect(config.API_TOKEN).toBeNull()
+  })
+
+  it("overrides API_TOKEN from env", async () => {
+    vi.stubEnv("API_TOKEN", "secret-token")
+    const config = await loadConfig()
+    expect(config.API_TOKEN).toBe("secret-token")
+    vi.unstubAllEnvs()
+  })
+
+  // --- CORS_ORIGIN ---
+
+  it("uses null CORS_ORIGIN when env not set", async () => {
+    delete process.env.CORS_ORIGIN
+    const config = await loadConfig()
+    expect(config.CORS_ORIGIN).toBeNull()
+  })
+
+  it("parses CORS_ORIGIN from comma-separated env", async () => {
+    vi.stubEnv("CORS_ORIGIN", "https://a.example, https://b.example")
+    const config = await loadConfig()
+    expect(config.CORS_ORIGIN).toEqual(["https://a.example", "https://b.example"])
+    vi.unstubAllEnvs()
+  })
 })

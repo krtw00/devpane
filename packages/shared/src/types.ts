@@ -118,6 +118,8 @@ export type Config = {
   WORKER_CONCURRENCY: number
   DB_PATH: string
   API_PORT: number
+  API_TOKEN: string | null
+  CORS_ORIGIN: string[] | null
   MAX_RETRIES: number
   MAX_DIFF_SIZE: number
   PR_RISK_DIFF_THRESHOLD: number

@@ -5,6 +5,20 @@ function env(key: string, fallback: string): string {
   return process.env[key] ?? fallback
 }
 
+function optionalEnv(key: string): string | null {
+  const value = process.env[key]?.trim()
+  return value ? value : null
+}
+
+function parseCorsOrigins(value: string | undefined): string[] | null {
+  if (!value) return null
+  const origins = value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+  return origins.length > 0 ? origins : null
+}
+
 function findGitRoot(): string {
   try {
     return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf-8" }).trim()
@@ -25,6 +39,8 @@ export const config: Config = {
   WORKER_CONCURRENCY: Number(env("WORKER_CONCURRENCY", "1")),
   DB_PATH: env("DB_PATH", `${env("PROJECT_ROOT", findGitRoot())}/devpane.db`),
   API_PORT: Number(env("API_PORT", "3001")),
+  API_TOKEN: optionalEnv("API_TOKEN"),
+  CORS_ORIGIN: parseCorsOrigins(process.env.CORS_ORIGIN),
   MAX_RETRIES: Number(env("DEVPANE_MAX_RETRIES", "2")),
   MAX_DIFF_SIZE: Number(env("DEVPANE_MAX_DIFF_SIZE", "500")),
   PR_RISK_DIFF_THRESHOLD: Number(env("PR_RISK_DIFF_THRESHOLD", "300")),
