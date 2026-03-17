@@ -5,6 +5,7 @@ import { buildTesterCliArgs } from "./claude.js"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { emit } from "./events.js"
+import { runAgentLoop, type AgentLoopCallbacks } from "./agent-loop.js"
 
 export type TesterResult = {
   testFiles: string[]
@@ -138,6 +139,73 @@ export function parseTesterOutput(stdout: string): string[] {
 }
 
 export function runTester(spec: PmOutput, worktreePath: string, taskId?: string): Promise<TesterResult> {
+  if (config.LLM_BACKEND === "openai-compatible") {
+    return runTesterApi(spec, worktreePath, taskId)
+  }
+  return runTesterCli(spec, worktreePath, taskId)
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.name === "AbortError") return true
+  const message = error.message.toLowerCase()
+  return message.includes("timeout") || message.includes("timed out") || message.includes("abort")
+}
+
+async function runTesterApi(spec: PmOutput, worktreePath: string, taskId?: string): Promise<TesterResult> {
+  const testFiles: string[] = []
+
+  try {
+    if (!config.LLM_API_KEY || !config.LLM_BASE_URL || !config.LLM_MODEL) {
+      throw new Error("LLM_API_KEY, LLM_BASE_URL, LLM_MODEL are required when LLM_BACKEND=openai-compatible")
+    }
+
+    const llmConfig = {
+      apiKey: config.LLM_API_KEY,
+      baseUrl: config.LLM_BASE_URL,
+      model: config.LLM_MODEL,
+      inputPricePerToken: config.LLM_INPUT_PRICE ?? undefined,
+      outputPricePerToken: config.LLM_OUTPUT_PRICE ?? undefined,
+    }
+
+    const callbacks: AgentLoopCallbacks = {
+      onToolCall: (name, args) => {
+        if (name === "write_file" && typeof args.path === "string" && !testFiles.includes(args.path)) {
+          testFiles.push(args.path)
+        }
+      },
+    }
+
+    await runAgentLoop(
+      "あなたはテストエンジニアです。仕様に基づいてテストファイルを作成してください。",
+      buildTesterPrompt(spec),
+      llmConfig,
+      worktreePath,
+      callbacks,
+      undefined,
+      config.TESTER_TIMEOUT_MS,
+    )
+
+    return {
+      testFiles,
+      exit_code: 0,
+      timedOut: false,
+    }
+  } catch (error) {
+    const timedOut = isTimeoutError(error)
+    if (timedOut) {
+      emit({ type: "task.failed", taskId: taskId ?? "tester", rootCause: "timeout" })
+    }
+    appendLog(taskId ?? "tester", "tester", `[error] ${error instanceof Error ? error.message : String(error)}`)
+    return {
+      testFiles,
+      exit_code: 1,
+      timedOut,
+    }
+  }
+}
+
+function runTesterCli(spec: PmOutput, worktreePath: string, taskId?: string): Promise<TesterResult> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env }
     delete env.CLAUDECODE
