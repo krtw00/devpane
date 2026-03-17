@@ -58,17 +58,20 @@ function collectShiftData(since: string): ShiftSummary {
     const goCount = d.prepare(`
       SELECT COUNT(*) AS cnt FROM agent_events
       WHERE type = 'gate.passed' AND json_extract(payload, '$.gate') = 'gate1'
-    `).get() as { cnt: number }
+        AND timestamp > ?
+    `).get(since) as { cnt: number }
     const killCount = d.prepare(`
       SELECT COUNT(*) AS cnt FROM agent_events
       WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
         AND json_extract(payload, '$.verdict') = 'kill'
-    `).get() as { cnt: number }
+        AND timestamp > ?
+    `).get(since) as { cnt: number }
     const recycleCount = d.prepare(`
       SELECT COUNT(*) AS cnt FROM agent_events
       WHERE type = 'gate.rejected' AND json_extract(payload, '$.gate') = 'gate1'
         AND json_extract(payload, '$.verdict') = 'recycle'
-    `).get() as { cnt: number }
+        AND timestamp > ?
+    `).get(since) as { cnt: number }
     gate1Stats = { go: goCount.cnt, kill: killCount.cnt, recycle: recycleCount.cnt }
   } catch (err) {
     console.warn("[morning-report] gate1Stats query failed, using defaults:", err)
