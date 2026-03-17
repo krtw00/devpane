@@ -29,6 +29,39 @@ jobs:
       - name: Test
         run: pnpm test
 
+  design-drift:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check design doc freshness
+        run: |
+          THRESHOLD_DAYS=30
+          SRC_LAST=$(git log -1 --format=%ct -- packages/)
+          STALE=0
+
+          for doc in design/03-details/*.md; do
+            DOC_LAST=$(git log -1 --format=%ct -- "$doc")
+            DIFF_DAYS=$(( (SRC_LAST - DOC_LAST) / 86400 ))
+            if [ "$DIFF_DAYS" -gt "$THRESHOLD_DAYS" ]; then
+              DOC_DATE=$(git log -1 --format=%ci -- "$doc" | cut -d' ' -f1)
+              SRC_DATE=$(git log -1 --format=%ci -- packages/ | cut -d' ' -f1)
+              echo "::warning file=$doc::Design doc last updated $DOC_DATE, source last updated $SRC_DATE (${DIFF_DAYS}d behind)"
+              STALE=1
+            fi
+          done
+
+          if [ "$STALE" -eq 1 ]; then
+            echo ""
+            echo "⚠ Some design docs in design/03-details/ may be out of date."
+            echo "  Consider running '/drift-detect' or updating the docs manually."
+          else
+            echo "✓ All design docs in design/03-details/ are up to date."
+          fi
+
   deploy:
     needs: check
     if: github.ref == 'refs/heads/ai-develop' && github.event_name == 'push'
