@@ -15,13 +15,15 @@ statsApi.get("/pipeline", (c) => {
 
 statsApi.get("/spc/:metric", (c) => {
   const metric = c.req.param("metric")
-  const limit = Number(c.req.query("limit") ?? 20)
+  const raw = Number(c.req.query("limit") ?? 20)
+  const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 100) : 20
   const data = getSpcMetrics(metric, limit)
   return c.json(data)
 })
 
 statsApi.get("/improvements", (c) => {
-  const limit = Number(c.req.query("limit") ?? 30)
+  const raw = Number(c.req.query("limit") ?? 30)
+  const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 100) : 30
   const improvements = getRecentImprovements(limit)
   return c.json(improvements)
 })
