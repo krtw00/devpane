@@ -101,10 +101,10 @@ describe("config env overrides", () => {
 
   // --- TESTER_TIMEOUT_MS ---
 
-  it("uses default TESTER_TIMEOUT_MS=300000 when env not set", async () => {
+  it("uses default TESTER_TIMEOUT_MS=600000 when env not set", async () => {
     delete process.env.TESTER_TIMEOUT_MS
     const config = await loadConfig()
-    expect(config.TESTER_TIMEOUT_MS).toBe(300000)
+    expect(config.TESTER_TIMEOUT_MS).toBe(600000)
   })
 
   it("overrides TESTER_TIMEOUT_MS from TESTER_TIMEOUT_MS env", async () => {

@@ -98,6 +98,7 @@ function isTimeoutError(error: unknown): boolean {
 
 export async function runTester(spec: PmOutput, worktreePath: string, taskId?: string): Promise<TesterResult> {
   const testFiles: string[] = []
+  const startedAt = Date.now()
 
   try {
     if (!config.LLM_API_KEY || !config.LLM_BASE_URL || !config.LLM_MODEL) {
@@ -140,7 +141,8 @@ export async function runTester(spec: PmOutput, worktreePath: string, taskId?: s
     if (timedOut) {
       emit({ type: "task.failed", taskId: taskId ?? "tester", rootCause: "timeout" })
     }
-    appendLog(taskId ?? "tester", "tester", `[error] ${error instanceof Error ? error.message : String(error)}`)
+    const elapsedMs = Date.now() - startedAt
+    appendLog(taskId ?? "tester", "tester", `[error] ${error instanceof Error ? error.message : String(error)} (elapsed=${elapsedMs}ms)`)
     return {
       testFiles,
       exit_code: 1,

@@ -36,7 +36,7 @@ export const config: Config = {
   APP_NAME: env("APP_NAME", "DevPane"),
   PROJECT_ROOT: env("PROJECT_ROOT", findGitRoot()),
   WORKER_TIMEOUT_MS: Number(env("WORKER_TIMEOUT_MS", "600000")),
-  TESTER_TIMEOUT_MS: Number(env("TESTER_TIMEOUT_MS", "300000")),
+  TESTER_TIMEOUT_MS: Number(env("TESTER_TIMEOUT_MS", "600000")),
   PM_TIMEOUT_MS: Number(env("PM_TIMEOUT_MS", "300000")),
   IDLE_INTERVAL_SEC: Number(env("IDLE_INTERVAL_SEC", "60")),
   PM_RETRY_INTERVAL_SEC: Number(env("PM_RETRY_INTERVAL_SEC", "30")),

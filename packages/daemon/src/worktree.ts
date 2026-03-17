@@ -4,6 +4,8 @@ import { join } from "node:path"
 import { config } from "./config.js"
 
 const WORKTREE_DIR = join(config.PROJECT_ROOT, ".worktrees")
+const OPEN_PR_CACHE_TTL_MS = 5 * 60 * 1000
+let lastKnownOpenPrs: { value: number, updatedAt: number } | null = null
 
 function git(...args: string[]): string {
   return execFileSync("git", args, { cwd: config.PROJECT_ROOT, encoding: "utf-8" }).trim()
@@ -203,11 +205,21 @@ export function countOpenPrs(): number | null {
       timeout: 15000,
     }).trim()
     const prs = JSON.parse(result)
-    return Array.isArray(prs) ? prs.length : 0
+    const count = Array.isArray(prs) ? prs.length : 0
+    lastKnownOpenPrs = { value: count, updatedAt: Date.now() }
+    return count
   } catch (err) {
     console.warn('[worktree] countOpenPrs failed:', err)
+    if (lastKnownOpenPrs && Date.now() - lastKnownOpenPrs.updatedAt <= OPEN_PR_CACHE_TTL_MS) {
+      console.warn(`[worktree] using cached open PR count: ${lastKnownOpenPrs.value}`)
+      return lastKnownOpenPrs.value
+    }
     return null
   }
+}
+
+export function resetOpenPrCountCacheForTests(): void {
+  lastKnownOpenPrs = null
 }
 
 export function getWorktreeDiff(taskId: string): { filesChanged: string[]; additions: number; deletions: number } {

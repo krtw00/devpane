@@ -3,7 +3,7 @@ import { join } from "node:path"
 import type { Task, Memory, PmOutput } from "@devpane/shared"
 import { PmOutputSchema } from "@devpane/shared/schemas"
 import { config } from "./config.js"
-import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask, appendLog } from "./db.js"
+import { getRecentDone, getAllDoneTitles, getFailedTasks, getTasksByStatus, createTask, appendLog, requeueTask, getTask, updateTaskPriority } from "./db.js"
 import { broadcast } from "./ws.js"
 import { recall } from "./memory.js"
 import { callLlm } from "./llm-bridge.js"
@@ -103,7 +103,7 @@ function buildPmPrompt(context: PmContext): string {
     "Based on the above, generate the next tasks to implement in priority order.",
     "",
     "【Task Generation Rules (STRICT)】",
-    "1. No duplicates: Do NOT generate tasks identical or similar to those in 'All Completed Tasks', 'Current Queue', or 'Implemented Features' in memory. Different title but same functionality = duplicate. Violations are auto-rejected.",
+    "1. No duplicates: Do NOT generate tasks identical or similar to those in 'All Completed Tasks', 'Current Queue', 'Implemented Features' in memory, or 'Failed Tasks' unless you are explicitly splitting the failed work into a materially smaller, narrower follow-up. Different title but same functionality = duplicate. Violations are auto-rejected.",
     "2. Scope: Prioritize improvements, bug fixes, test coverage, and stability over adding new features. Do NOT try to implement all unfinished features from vision.md.",
     `3. Implementability: Each task description must be specific enough for a Worker to implement independently. Include target files, expected behavior, and test plan. Max diff size: ${config.MAX_DIFF_SIZE} lines.`,
     "4. Granularity: 1 task = 1 PR. Split large tasks.",
@@ -189,11 +189,48 @@ export function isDuplicate(newTitle: string, existingTitles: string[]): boolean
   })
 }
 
+function parseFailureText(task: Task): string {
+  if (!task.result) return ""
+  try {
+    const parsed = JSON.parse(task.result) as {
+      error?: string
+      gate1?: { reasons?: string[] }
+      gate3?: { reasons?: string[], failure?: { root_cause?: string } }
+    }
+    return [
+      parsed.error,
+      ...(parsed.gate1?.reasons ?? []),
+      ...(parsed.gate3?.reasons ?? []),
+      parsed.gate3?.failure?.root_cause,
+    ]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .join(" ")
+      .toLowerCase()
+  } catch {
+    return task.result.toLowerCase()
+  }
+}
+
+function isRetryableFailedTask(task: Task): boolean {
+  if (task.retry_count >= config.MAX_RETRIES) return false
+  if (!task.finished_at) return true
+
+  const finishedAt = Date.parse(task.finished_at)
+  if (Number.isFinite(finishedAt)) {
+    const cooldownMs = config.COOLDOWN_INTERVAL_SEC * 1000
+    if (Date.now() - finishedAt < cooldownMs) return false
+  }
+
+  const failureText = parseFailureText(task)
+  if (/duplicate|already implemented|max retries exceeded/.test(failureText)) return false
+  return true
+}
+
 export function ingestPmTasks(output: PmOutput): Task[] {
   const doneTitles = getAllDoneTitles()
   const pendingTitles = getTasksByStatus("pending").map(t => t.title)
-  const failedTitles = getTasksByStatus("failed").map(t => t.title)
-  const existingTitles = [...doneTitles, ...pendingTitles, ...failedTitles]
+  const failedTasks = getFailedTasks()
+  const existingTitles = [...doneTitles, ...pendingTitles]
 
   const created: Task[] = []
   for (const t of output.tasks) {
@@ -201,6 +238,24 @@ export function ingestPmTasks(output: PmOutput): Task[] {
       console.log(`[pm] skipped duplicate task: ${t.title}`)
       continue
     }
+
+    const matchedFailed = failedTasks.find(failed => isDuplicate(t.title, [failed.title]))
+    if (matchedFailed) {
+      if (isRetryableFailedTask(matchedFailed)) {
+        requeueTask(matchedFailed.id)
+        updateTaskPriority(matchedFailed.id, t.priority)
+        const requeued = getTask(matchedFailed.id)
+        if (requeued) {
+          console.log(`[pm] requeued failed task: ${requeued.title}`)
+          created.push(requeued)
+          existingTitles.push(requeued.title)
+        }
+      } else {
+        console.log(`[pm] skipped failed task retry: ${t.title}`)
+      }
+      continue
+    }
+
     const task = createTask(t.title, t.description, "pm", t.priority, null, t.constraints ?? null)
     created.push(task)
     existingTitles.push(t.title)

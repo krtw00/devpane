@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { initDb, closeDb, createTask, startTask, finishTask } from "../db.js"
+import { initDb, closeDb, createTask, startTask, finishTask, getDb, getTask } from "../db.js"
 import { ingestPmTasks } from "../pm.js"
 import type { PmOutput } from "@devpane/shared"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
 
-describe("ingestPmTasks — failed task deduplication", () => {
+describe("ingestPmTasks — failed task handling", () => {
   beforeEach(() => {
     initDb(":memory:", migrationsDir)
   })
@@ -17,28 +17,34 @@ describe("ingestPmTasks — failed task deduplication", () => {
     closeDb()
   })
 
-  it("skips a task whose title matches a failed task", () => {
-    // Arrange: create a task and mark it as failed
+  function setFinishedAt(taskId: string, iso: string) {
+    getDb().prepare(`UPDATE tasks SET finished_at = ? WHERE id = ?`).run(iso, taskId)
+  }
+
+  it("requeues a retryable failed task whose title matches after cooldown", () => {
     const task = createTask("WebSocket再接続の実装", "desc", "pm", 5)
     startTask(task.id, "worker-1")
     finishTask(task.id, "failed", JSON.stringify({ exit_code: 1 }))
+    setFinishedAt(task.id, new Date(Date.now() - 10 * 60 * 1000).toISOString())
 
     const pmOutput: PmOutput = {
       tasks: [{ title: "WebSocket再接続の実装", description: "再実装", priority: 3 }],
       reasoning: "retry",
     }
 
-    // Act
     const created = ingestPmTasks(pmOutput)
 
-    // Assert: the duplicate should be skipped
-    expect(created).toHaveLength(0)
+    expect(created).toHaveLength(1)
+    expect(created[0].id).toBe(task.id)
+    expect(created[0].status).toBe("pending")
+    expect(getTask(task.id)?.retry_count).toBe(1)
   })
 
-  it("skips a task whose normalized title matches a failed task", () => {
+  it("requeues a task whose normalized title matches a failed task", () => {
     const task = createTask("Gate 1 方針チェック", "desc", "pm", 5)
     startTask(task.id, "worker-1")
     finishTask(task.id, "failed", null)
+    setFinishedAt(task.id, new Date(Date.now() - 10 * 60 * 1000).toISOString())
 
     const pmOutput: PmOutput = {
       tasks: [{ title: "Gate1方針チェック", description: "retry", priority: 3 }],
@@ -46,7 +52,8 @@ describe("ingestPmTasks — failed task deduplication", () => {
     }
 
     const created = ingestPmTasks(pmOutput)
-    expect(created).toHaveLength(0)
+    expect(created).toHaveLength(1)
+    expect(created[0].id).toBe(task.id)
   })
 
   it("allows a genuinely new task even when failed tasks exist", () => {
@@ -64,7 +71,7 @@ describe("ingestPmTasks — failed task deduplication", () => {
     expect(created[0].title).toBe("Discord Webhook通知の追加")
   })
 
-  it("deduplicates against done, pending, AND failed tasks simultaneously", () => {
+  it("deduplicates against done and pending, and requeues failed when eligible", () => {
     // done task
     const done = createTask("完了済みタスク", "desc", "pm", 5)
     startTask(done.id, "worker-1")
@@ -77,6 +84,7 @@ describe("ingestPmTasks — failed task deduplication", () => {
     const failed = createTask("失敗タスク", "desc", "pm", 1)
     startTask(failed.id, "worker-1")
     finishTask(failed.id, "failed", null)
+    setFinishedAt(failed.id, new Date(Date.now() - 10 * 60 * 1000).toISOString())
 
     const pmOutput: PmOutput = {
       tasks: [
@@ -89,11 +97,12 @@ describe("ingestPmTasks — failed task deduplication", () => {
     }
 
     const created = ingestPmTasks(pmOutput)
-    expect(created).toHaveLength(1)
-    expect(created[0].title).toBe("全く新しいタスク")
+    expect(created).toHaveLength(2)
+    expect(created.map(task => task.title)).toContain("失敗タスク")
+    expect(created.map(task => task.title)).toContain("全く新しいタスク")
   })
 
-  it("skips task when failed task title is a substring match", () => {
+  it("does not requeue a failed task that is still cooling down", () => {
     const task = createTask("スケジューラ制御APIとメモリ管理API", "desc", "pm", 5)
     startTask(task.id, "worker-1")
     finishTask(task.id, "failed", null)
@@ -105,5 +114,25 @@ describe("ingestPmTasks — failed task deduplication", () => {
 
     const created = ingestPmTasks(pmOutput)
     expect(created).toHaveLength(0)
+    expect(getTask(task.id)?.status).toBe("failed")
+  })
+
+  it("does not requeue a failed task whose failure indicates a duplicate request", () => {
+    const task = createTask("スケジューラ制御APIとメモリ管理API", "desc", "pm", 5)
+    startTask(task.id, "worker-1")
+    finishTask(task.id, "failed", JSON.stringify({
+      error: "already implemented",
+      gate1: { verdict: "kill", reasons: ["duplicate enhancement"] },
+    }))
+    setFinishedAt(task.id, new Date(Date.now() - 10 * 60 * 1000).toISOString())
+
+    const pmOutput: PmOutput = {
+      tasks: [{ title: "スケジューラ制御API", description: "partial match", priority: 3 }],
+      reasoning: "retry subset",
+    }
+
+    const created = ingestPmTasks(pmOutput)
+    expect(created).toHaveLength(0)
+    expect(getTask(task.id)?.status).toBe("failed")
   })
 })

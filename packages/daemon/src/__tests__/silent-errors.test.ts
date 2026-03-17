@@ -17,6 +17,7 @@ vi.mock("../ws.js", () => ({
 vi.mock("../config.js", () => ({
   config: {
     PROJECT_ROOT: "/tmp/test-project",
+    COOLDOWN_INTERVAL_SEC: 300,
   },
 }))
 
@@ -62,6 +63,25 @@ describe("silent error logging", () => {
 
       expect(result).toBe(null)
       expect(warnSpy).toHaveBeenCalledWith("[worktree] countOpenPrs failed:", ghError)
+    })
+
+    it("uses cached count when gh CLI fails after a successful read", async () => {
+      const ghError = new Error("temporary github outage")
+      const execFileSync = vi.fn()
+        .mockReturnValueOnce("[]")
+        .mockImplementationOnce(() => {
+          throw ghError
+        })
+      vi.doMock("node:child_process", () => ({ execFileSync }))
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+      const { countOpenPrs, resetOpenPrCountCacheForTests } = await import("../worktree.js")
+      resetOpenPrCountCacheForTests()
+
+      expect(countOpenPrs()).toBe(0)
+      expect(countOpenPrs()).toBe(0)
+      expect(warnSpy).toHaveBeenCalledWith("[worktree] countOpenPrs failed:", ghError)
+      expect(warnSpy).toHaveBeenCalledWith("[worktree] using cached open PR count: 0")
     })
   })
 })
