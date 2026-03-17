@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useTasks, createTask, fetchMemories, deleteMemory, type Task, type Memory } from '../composables/useApi'
+import { useTasks, createTask, fetchMemories, deleteMemory, updateMemory, type Task, type Memory } from '../composables/useApi'
 import { onWsEvent } from '../composables/useSocket'
 
 const { tasks, loading, error, refresh } = useTasks()
@@ -23,6 +23,16 @@ async function removeMemory(id: string) {
 }
 
 const CATEGORY_LABELS: Record<string, string> = { feature: '実装済み機能', decision: '判断', lesson: '教訓' }
+
+const editingMemory = ref<string | null>(null)
+const editContent = ref('')
+function startEditMemory(m: Memory) {
+  editingMemory.value = m.id
+  editContent.value = m.content
+}
+async function saveMemory(id: string) {
+  try { await updateMemory(id, editContent.value); editingMemory.value = null; await refreshMemories() } catch {}
+}
 
 let timer: ReturnType<typeof setInterval>
 onMounted(() => { refresh(); refreshMemories(); timer = setInterval(refresh, 5000) })
@@ -132,7 +142,15 @@ async function submitTask() {
       <div class="mem-list" v-if="memories.length > 0">
         <div v-for="m in memories" :key="m.id" class="mem-row">
           <span class="mem-cat" :class="`cat-${m.category}`">{{ CATEGORY_LABELS[m.category] ?? m.category }}</span>
-          <span class="mem-content">{{ m.content }}</span>
+          <template v-if="editingMemory === m.id">
+            <textarea class="mem-edit-input" v-model="editContent" rows="3" />
+            <button class="mem-save" @click="saveMemory(m.id)">保存</button>
+            <button class="mem-cancel-edit" @click="editingMemory = null">取消</button>
+          </template>
+          <template v-else>
+            <span class="mem-content">{{ m.content }}</span>
+            <button class="mem-edit" @click="startEditMemory(m)" title="編集">✎</button>
+          </template>
           <button class="mem-del" @click="removeMemory(m.id)" title="削除">×</button>
         </div>
       </div>
@@ -249,6 +267,24 @@ header { margin-bottom: 1rem; }
   font-size: 0.8rem; padding: 0 0.2rem; line-height: 1;
 }
 .mem-del:hover { color: #f85149; }
+.mem-edit {
+  flex-shrink: 0; background: none; border: none; color: #484f58; cursor: pointer;
+  font-size: 0.8rem; padding: 0 0.2rem; line-height: 1;
+}
+.mem-edit:hover { color: #58a6ff; }
+.mem-edit-input {
+  flex: 1; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 4px; padding: 0.3rem 0.5rem; font-family: inherit; font-size: 0.75rem;
+  resize: vertical; min-height: 40px;
+}
+.mem-save {
+  flex-shrink: 0; font-family: inherit; font-size: 0.6rem; padding: 0.15rem 0.4rem;
+  background: #238636; color: #f0f6fc; border: none; border-radius: 3px; cursor: pointer;
+}
+.mem-cancel-edit {
+  flex-shrink: 0; font-family: inherit; font-size: 0.6rem; padding: 0.15rem 0.4rem;
+  background: #21262d; color: #8b949e; border: 1px solid #30363d; border-radius: 3px; cursor: pointer;
+}
 
 /* Modal */
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }

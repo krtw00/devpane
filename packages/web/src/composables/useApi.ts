@@ -86,6 +86,44 @@ export async function retryTask(id: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
+export async function patchTask(id: string, body: { status?: 'pending' | 'cancelled'; priority?: number }): Promise<Task> {
+  const res = await fetch(`${BASE}/tasks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+export function fetchSystemHealth(): Promise<{ checks: { name: string; ok: boolean; message: string }[]; overall: string }> {
+  return fetchJson('/system/health')
+}
+
+export function fetchBackups(): Promise<{ path: string; size: number; created: string }[]> {
+  return fetchJson('/backups')
+}
+
+export async function createBackup(): Promise<{ path: string }> {
+  const res = await fetch(`${BASE}/backups`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+export type ChatMessage = {
+  id: string
+  role: 'human' | 'system'
+  message: string
+  task_id: string | null
+  created_at: string
+}
+
+export function fetchChatMessages(limit = 50, before?: string): Promise<ChatMessage[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (before) params.set('before', before)
+  return fetchJson<ChatMessage[]>(`/chat/messages?${params}`)
+}
+
 export type PipelineTrace = {
   taskId: string
   title: string

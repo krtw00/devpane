@@ -328,6 +328,7 @@ async function send() {
           <span class="imp-col-status">状態</span>
           <span class="imp-col-verdict">判定</span>
           <span class="imp-col-date">適用日</span>
+          <span class="imp-col-act">操作</span>
         </div>
         <div v-for="imp in improvements" :key="imp.id" class="imp-row">
           <span class="imp-col-target">{{ imp.target }}</span>
@@ -335,6 +336,9 @@ async function send() {
           <span class="imp-col-status"><span :class="['imp-badge', statusBadgeClass(imp.status)]">{{ imp.status }}</span></span>
           <span class="imp-col-verdict">{{ imp.verdict ?? '-' }}</span>
           <span class="imp-col-date">{{ formatDate(imp.applied_at) }}</span>
+          <span class="imp-col-act">
+            <button v-if="imp.status === 'active'" class="imp-revert-btn" disabled title="TODO: API未実装">撤回</button>
+          </span>
         </div>
       </div>
     </div>
@@ -547,6 +551,12 @@ h1 { font-size: 1.1rem; margin: 0; color: #f0f6fc; letter-spacing: -0.5px; }
 .imp-col-status { }
 .imp-col-verdict { color: #8b949e; }
 .imp-col-date { color: #484f58; }
+.imp-col-act { }
+.imp-revert-btn {
+  font-family: inherit; font-size: 0.6rem; padding: 0.1rem 0.3rem;
+  background: #21262d; color: #f85149; border: 1px solid #f8514940; border-radius: 3px;
+  cursor: not-allowed; opacity: 0.5;
+}
 .imp-badge {
   padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.6rem; font-weight: 600;
   background: #21262d;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useTaskDetail, fetchEvents, fetchTaskTrace, retryTask, type PipelineTrace } from '../composables/useApi'
+import { useTaskDetail, fetchEvents, fetchTaskTrace, retryTask, patchTask, type PipelineTrace } from '../composables/useApi'
 import { ref } from 'vue'
 
 const props = defineProps<{ id: string }>()
@@ -40,6 +40,27 @@ async function doRetry() {
   try { await retryTask(props.id); await refresh() } finally { retrying.value = false }
 }
 
+const cancelling = ref(false)
+async function doCancel() {
+  if (!task.value || cancelling.value) return
+  cancelling.value = true
+  try { await patchTask(props.id, { status: 'cancelled' }); await refresh() } finally { cancelling.value = false }
+}
+
+const editingPriority = ref(false)
+const newPriority = ref(0)
+function startEditPriority() {
+  if (!task.value) return
+  newPriority.value = task.value.priority
+  editingPriority.value = true
+}
+async function savePriority() {
+  if (!task.value) return
+  await patchTask(props.id, { priority: newPriority.value })
+  editingPriority.value = false
+  await refresh()
+}
+
 const facts = computed(() => {
   if (!task.value?.result) return null
   try {
@@ -74,8 +95,17 @@ const diffDelPct = computed(() => {
         <span :class="['badge', `badge-${task.status}`]">{{ task.status }}</span>
         <span>作成: {{ task.created_by }}</span>
         <span v-if="task.assigned_to">担当: {{ task.assigned_to }}</span>
+        <span class="priority-display" @click="startEditPriority" title="クリックで変更">P:{{ task.priority }}</span>
         <a v-if="prUrl" :href="prUrl" target="_blank" class="pr-link">PR →</a>
         <button v-if="task.status === 'failed'" class="retry-btn" @click="doRetry" :disabled="retrying">{{ retrying ? '再キュー中...' : '🔄 リトライ' }}</button>
+        <button v-if="task.status === 'pending'" class="cancel-btn" @click="doCancel" :disabled="cancelling">{{ cancelling ? 'キャンセル中...' : '✕ キャンセル' }}</button>
+      </div>
+
+      <div v-if="editingPriority" class="priority-edit">
+        <label>優先度:</label>
+        <input type="number" v-model.number="newPriority" min="0" max="100" class="priority-input" />
+        <button class="save-btn" @click="savePriority">保存</button>
+        <button class="cancel-edit-btn" @click="editingPriority = false">取消</button>
       </div>
 
       <section class="description">
@@ -216,6 +246,39 @@ h2 {
 }
 .retry-btn:hover { background: #d2992220; }
 .retry-btn:disabled { opacity: 0.4; cursor: default; }
+
+.cancel-btn {
+  font-family: inherit; font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  background: #21262d; color: #f85149; border: 1px solid #f8514940; border-radius: 3px;
+  cursor: pointer;
+}
+.cancel-btn:hover { background: #f8514920; }
+.cancel-btn:disabled { opacity: 0.4; cursor: default; }
+
+.priority-display {
+  padding: 0.1rem 0.4rem; border: 1px solid #30363d; border-radius: 3px;
+  cursor: pointer; font-size: 0.7rem;
+}
+.priority-display:hover { background: #21262d; }
+
+.priority-edit {
+  display: flex; gap: 0.5rem; align-items: center;
+  margin-top: 0.5rem; font-size: 0.8rem;
+}
+.priority-input {
+  width: 60px; padding: 0.15rem 0.3rem; font-family: inherit; font-size: 0.8rem;
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px;
+}
+.save-btn {
+  font-family: inherit; font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  background: #238636; color: #f0f6fc; border: 1px solid #23863640; border-radius: 3px;
+  cursor: pointer;
+}
+.cancel-edit-btn {
+  font-family: inherit; font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  background: #21262d; color: #8b949e; border: 1px solid #30363d; border-radius: 3px;
+  cursor: pointer;
+}
 
 .description pre {
   background: #161b22;
