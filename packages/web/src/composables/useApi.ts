@@ -259,6 +259,12 @@ export function fetchImprovements(limit = 30): Promise<Improvement[]> {
   return fetchJson<Improvement[]>(`/stats/improvements?limit=${limit}`)
 }
 
+export async function revertImprovement(id: string): Promise<Improvement> {
+  const res = await fetch(`${BASE}/stats/improvements/${id}/revert`, { method: 'POST' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 export type SchedulerStatus = {
   alive: boolean
   paused: boolean

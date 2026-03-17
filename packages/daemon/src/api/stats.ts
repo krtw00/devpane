@@ -1,6 +1,7 @@
 import { Hono } from "hono"
-import { getCostStats, getPipelineStats, getRecentImprovements, getSpcMetrics } from "../db.js"
+import { getCostStats, getImprovement, getPipelineStats, getRecentImprovements, getSpcMetrics, updateImprovementStatus } from "../db.js"
 import { checkBudget } from "../cost-guard.js"
+import { emit } from "../events.js"
 
 export const statsApi = new Hono()
 
@@ -31,4 +32,17 @@ statsApi.get("/improvements", (c) => {
   const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 100) : 30
   const improvements = getRecentImprovements(limit)
   return c.json(improvements)
+})
+
+statsApi.post("/improvements/:id/revert", (c) => {
+  const id = c.req.param("id")
+  const improvement = getImprovement(id)
+  if (!improvement) return c.json({ error: "not found" }, 404)
+  if (improvement.status !== "active") {
+    return c.json({ error: "only active improvements can be reverted" }, 400)
+  }
+
+  const updated = updateImprovementStatus(id, "reverted")
+  emit({ type: "improvement.reverted", improvementId: id, reason: "manual revert" })
+  return c.json(updated)
 })

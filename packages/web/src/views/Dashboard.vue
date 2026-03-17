@@ -3,7 +3,7 @@ import { ref, inject, onMounted, onUnmounted, nextTick, watch, type Ref } from '
 import {
   fetchSchedulerStatus, fetchPipelineStats, fetchEvents,
   pauseScheduler, resumeScheduler,
-  fetchSpcMetric, fetchImprovements,
+  fetchSpcMetric, fetchImprovements, revertImprovement,
   type PipelineStats, type SchedulerStatus, type AgentEvent,
   type SpcMetricData, type Improvement,
 } from '../composables/useApi'
@@ -24,6 +24,7 @@ const spcCost = ref<SpcMetricData | null>(null)
 const spcExecTime = ref<SpcMetricData | null>(null)
 const spcDiffSize = ref<SpcMetricData | null>(null)
 const improvements = ref<Improvement[]>([])
+const revertingImprovementId = ref<string | null>(null)
 
 async function refreshStatus() {
   try {
@@ -44,6 +45,20 @@ async function refreshSpc() {
 
 async function refreshImprovements() {
   try { improvements.value = await fetchImprovements(20) } catch {}
+}
+
+async function handleRevertImprovement(id: string) {
+  if (revertingImprovementId.value) return
+  revertingImprovementId.value = id
+  try {
+    await revertImprovement(id)
+    await Promise.all([refreshImprovements(), refreshStatus()])
+    apiError.value = null
+  } catch (err) {
+    apiError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    revertingImprovementId.value = null
+  }
 }
 
 function statusBadgeClass(status: string): string {
@@ -172,6 +187,7 @@ function eventSummary(e: AgentEvent): string {
     case 'pm.invoked': return 'PM呼び出し'
     case 'pm.failed': return `PM失敗 (${e.consecutiveCount}回目)`
     case 'spc.alert': return `SPC異常: ${e.metric}`
+    case 'improvement.reverted': return `改善撤回: ${String(e.reason ?? '') || String(e.improvementId ?? '')}`
     default: return e.type
   }
 }
@@ -337,7 +353,12 @@ async function send() {
           <span class="imp-col-verdict">{{ imp.verdict ?? '-' }}</span>
           <span class="imp-col-date">{{ formatDate(imp.applied_at) }}</span>
           <span class="imp-col-act">
-            <button v-if="imp.status === 'active'" class="imp-revert-btn" disabled title="TODO: API未実装">撤回</button>
+            <button
+              v-if="imp.status === 'active'"
+              class="imp-revert-btn"
+              :disabled="revertingImprovementId === imp.id"
+              @click="handleRevertImprovement(imp.id)"
+            >{{ revertingImprovementId === imp.id ? '撤回中...' : '撤回' }}</button>
           </span>
         </div>
       </div>
