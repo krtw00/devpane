@@ -13,6 +13,7 @@
     "@devpane/shared": "workspace:*",
     "@hono/node-server": "^1.0.0",
     "better-sqlite3": "^11.0.0",
+    "dotenv": "^17.3.1",
     "hono": "^4.0.0",
     "ulid": "^2.3.0",
     "ws": "^8.19.0",

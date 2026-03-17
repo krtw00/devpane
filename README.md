@@ -71,6 +71,29 @@ pnpm test         # Run all tests
 pnpm start        # Start daemon (production)
 ```
 
+## VPS Deployment
+
+For a VPS/systemd setup:
+
+```bash
+./deploy/setup.sh <git-repo-url>
+# Then edit /opt/devpane/.env
+```
+
+Minimum `.env` settings for DeepSeek:
+
+```env
+PROJECT_ROOT=/path/to/target-repo
+LLM_BACKEND=openai-compatible
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+LLM_INPUT_PRICE=0.00000028
+LLM_OUTPUT_PRICE=0.00000042
+```
+
+`deploy/deploy.sh` intentionally preserves the remote `.env`, so local secrets and local `PROJECT_ROOT` are not pushed to the VPS.
+
 ## Architecture
 
 ```

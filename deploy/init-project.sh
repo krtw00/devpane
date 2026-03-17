@@ -36,6 +36,14 @@ DEVPANE_TEST_FRAMEWORK=vitest
 DEVPANE_BASE_BRANCH=main
 DEVPANE_BRANCH_PREFIX=devpane
 
+# LLM provider (example: DeepSeek)
+LLM_BACKEND=openai-compatible
+# LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+LLM_INPUT_PRICE=0.00000028
+LLM_OUTPUT_PRICE=0.00000042
+
 # Optional: GitHub Issues sync
 # ISSUE_SYNC_ENABLED=true
 # ISSUE_SYNC_LABELS=bug,enhancement

@@ -1,5 +1,18 @@
 import { execFileSync } from "node:child_process"
+import { resolve } from "node:path"
+import { config as loadDotenv } from "dotenv"
 import type { ActiveHours, Config } from "@devpane/shared"
+
+function findGitRoot(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf-8" }).trim()
+  } catch {
+    return process.cwd()
+  }
+}
+
+loadDotenv()
+loadDotenv({ path: resolve(findGitRoot(), ".env"), override: false })
 
 function env(key: string, fallback: string): string {
   return process.env[key] ?? fallback
@@ -17,14 +30,6 @@ function parseCorsOrigins(value: string | undefined): string[] | null {
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0)
   return origins.length > 0 ? origins : null
-}
-
-function findGitRoot(): string {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf-8" }).trim()
-  } catch {
-    return process.cwd()
-  }
 }
 
 export const config: Config = {

@@ -34,7 +34,7 @@ cd "${INSTALL_DIR}"
 
 if [ ! -f .env ] && [ -f .env.example ]; then
   cp .env.example .env
-  echo "  Created .env from .env.example (edit as needed)"
+  echo "  Created .env from .env.example (edit PROJECT_ROOT and LLM_* before starting)"
 fi
 
 pnpm install --frozen-lockfile
@@ -51,3 +51,4 @@ systemctl --user enable --now devpane.service
 echo "==> Setup complete"
 echo "  Check status: systemctl --user status devpane.service"
 echo "  View logs:    journalctl --user -u devpane.service -f"
+echo "  Edit config:  ${INSTALL_DIR}/.env"

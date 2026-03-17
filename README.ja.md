@@ -71,6 +71,29 @@ pnpm test         # 全テストを実行
 pnpm start        # daemon を起動（本番用）
 ```
 
+## VPS デプロイ
+
+VPS / systemd で使う場合:
+
+```bash
+./deploy/setup.sh <git-repo-url>
+# その後 /opt/devpane/.env を編集
+```
+
+DeepSeek を使う最小設定:
+
+```env
+PROJECT_ROOT=/path/to/target-repo
+LLM_BACKEND=openai-compatible
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+LLM_INPUT_PRICE=0.00000028
+LLM_OUTPUT_PRICE=0.00000042
+```
+
+`deploy/deploy.sh` はリモートの `.env` を保持するため、ローカルの秘密情報やローカル用 `PROJECT_ROOT` は VPS に上書きされません。
+
 ## アーキテクチャ
 
 ```
