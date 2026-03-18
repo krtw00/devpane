@@ -44,6 +44,8 @@ vi.mock("../db.js", () => ({
   getAgentEvents: vi.fn(() => []),
   getDb: vi.fn(),
   recoverOrphanedTasks: vi.fn(() => []),
+  suppressTerminalFailedTask: vi.fn(() => null),
+  suppressTerminalFailedTasks: vi.fn(() => []),
 }))
 
 const mockPruneWorktrees = vi.fn()

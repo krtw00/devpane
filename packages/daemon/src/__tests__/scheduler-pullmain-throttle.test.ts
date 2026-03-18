@@ -57,6 +57,8 @@ vi.mock("../db.js", () => ({
   getAgentEvents: vi.fn(() => []),
   getDb: vi.fn(),
   recoverOrphanedTasks: vi.fn(() => []),
+  suppressTerminalFailedTask: vi.fn(() => null),
+  suppressTerminalFailedTasks: vi.fn(() => []),
 }))
 
 vi.mock("../worker.js", () => ({

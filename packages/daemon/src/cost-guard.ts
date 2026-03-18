@@ -16,11 +16,11 @@ export function checkBudget(): BudgetStatus {
   const rate = config.USD_JPY_RATE
 
   const dailyRow = db.prepare(
-    "SELECT COALESCE(SUM(cost_usd), 0) AS total FROM tasks WHERE finished_at >= date('now', 'localtime', 'start of day')",
+    "SELECT COALESCE(SUM(cost_usd), 0) AS total FROM tasks WHERE finished_at IS NOT NULL AND date(finished_at, 'localtime') = date('now', 'localtime')",
   ).get() as { total: number }
 
   const monthlyRow = db.prepare(
-    "SELECT COALESCE(SUM(cost_usd), 0) AS total FROM tasks WHERE finished_at >= date('now', 'localtime', 'start of month')",
+    "SELECT COALESCE(SUM(cost_usd), 0) AS total FROM tasks WHERE finished_at IS NOT NULL AND strftime('%Y-%m', finished_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')",
   ).get() as { total: number }
 
   const dailyCostJpy = dailyRow.total * rate

@@ -40,6 +40,8 @@ vi.mock("../db.js", () => ({
   insertAgentEvent: vi.fn(),
   getAgentEvents: vi.fn(() => []),
   getDb: vi.fn(),
+  suppressTerminalFailedTask: vi.fn(() => null),
+  suppressTerminalFailedTasks: vi.fn(() => []),
 }))
 
 vi.mock("../worktree.js", () => ({

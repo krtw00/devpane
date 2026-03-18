@@ -156,7 +156,7 @@ describe("Gate1 recycle → retry_count消費", () => {
     expect(getRetryCount(task.id)).toBe(1)
   })
 
-  it("Gate1 recycleがMAX_RETRIES回繰り返されるとfailedになる", async () => {
+  it("Gate1 recycleがMAX_RETRIES回繰り返されるとsuppressedになる", async () => {
     const { executeTask } = await import("../scheduler.js")
     mockRunGate1.mockResolvedValue({ verdict: "recycle", reasons: ["LLM output not parseable"] })
     const task = makeTask()
@@ -179,7 +179,7 @@ describe("Gate1 recycle → retry_count消費", () => {
     await executeTask(afterRetries)
 
     const finalTask = getTask(task.id)!
-    expect(finalTask.status).toBe("failed")
+    expect(finalTask.status).toBe("suppressed")
   })
 
   it("Gate1 recycleが連続してもretry_countが毎回インクリメントされる", async () => {
