@@ -17,6 +17,8 @@ ssh "${HOST}" "
   cd ${REMOTE_DIR}
   systemctl --user stop devpane.service || true
   git fetch origin ${DEPLOY_BRANCH}
+  git reset --hard
+  git clean -fd -e .env -e '.env.*' -e data -e .worktrees
   git checkout -B ${DEPLOY_BRANCH} origin/${DEPLOY_BRANCH}
   git reset --hard origin/${DEPLOY_BRANCH}
   git clean -fd -e .env -e '.env.*' -e data -e .worktrees
