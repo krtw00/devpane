@@ -36,6 +36,7 @@ export async function runAgentLoop(
   callbacks?: AgentLoopCallbacks,
   maxTurns: number = DEFAULT_MAX_TURNS,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  requestTimeoutMs: number = DEFAULT_LLM_REQUEST_TIMEOUT_MS,
 ): Promise<AgentLoopResult> {
   const startTime = Date.now()
   const tools = getToolDefinitions()
@@ -63,7 +64,7 @@ export async function runAgentLoop(
       messages,
       tools,
       llmConfig,
-      Math.min(DEFAULT_LLM_REQUEST_TIMEOUT_MS, remainingMs),
+      Math.min(requestTimeoutMs, remainingMs),
     )
 
     totalCost += result.cost_usd

@@ -114,6 +114,25 @@ describe("config env overrides", () => {
     vi.unstubAllEnvs()
   })
 
+  it("uses default LLM request timeout and allows role-specific overrides", async () => {
+    delete process.env.LLM_REQUEST_TIMEOUT_MS
+    delete process.env.TESTER_LLM_REQUEST_TIMEOUT_MS
+    delete process.env.WORKER_LLM_REQUEST_TIMEOUT_MS
+    let config = await loadConfig()
+    expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(120000)
+    expect(config.TESTER_LLM_REQUEST_TIMEOUT_MS).toBe(120000)
+    expect(config.WORKER_LLM_REQUEST_TIMEOUT_MS).toBe(120000)
+
+    vi.resetModules()
+    vi.stubEnv("LLM_REQUEST_TIMEOUT_MS", "180000")
+    vi.stubEnv("TESTER_LLM_REQUEST_TIMEOUT_MS", "300000")
+    config = await loadConfig()
+    expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(180000)
+    expect(config.TESTER_LLM_REQUEST_TIMEOUT_MS).toBe(300000)
+    expect(config.WORKER_LLM_REQUEST_TIMEOUT_MS).toBe(180000)
+    vi.unstubAllEnvs()
+  })
+
   it("uses shared LLM config as fallback for tester/worker role config", async () => {
     vi.stubEnv("LLM_API_KEY", "shared-key")
     vi.stubEnv("LLM_BASE_URL", "https://example.com/v1")

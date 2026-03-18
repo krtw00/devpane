@@ -30,6 +30,7 @@ vi.mock("../config.js", () => ({
     WORKER_LLM_INPUT_PRICE: 0.111,
     WORKER_LLM_OUTPUT_PRICE: 0.222,
     WORKER_TIMEOUT_MS: 600_000,
+    WORKER_LLM_REQUEST_TIMEOUT_MS: 180_000,
     BUILD_CMD: "pnpm build",
     TEST_CMD: "pnpm test",
   },
@@ -80,10 +81,11 @@ describe("runWorker API mode", () => {
       duration_ms: 1234,
     })
 
-    const [systemPrompt, userPrompt, llmConfig, rootDir, _callbacks, _maxTurns, timeoutMs] = mockRunAgentLoop.mock.calls[0]
+    const [systemPrompt, userPrompt, llmConfig, rootDir, _callbacks, _maxTurns, timeoutMs, requestTimeoutMs] = mockRunAgentLoop.mock.calls[0]
     expect(systemPrompt).toBe("あなたは優秀なソフトウェアエンジニアです。ツールを使ってタスクを完遂してください。")
     expect(rootDir).toBe("/tmp/worktree")
     expect(timeoutMs).toBe(600_000)
+    expect(requestTimeoutMs).toBe(180_000)
     expect(llmConfig).toEqual({
       apiKey: "worker-key",
       baseUrl: "http://localhost:8082",

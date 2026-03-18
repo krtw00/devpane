@@ -26,6 +26,7 @@ vi.mock("../config.js", () => ({
     TESTER_LLM_INPUT_PRICE: 0.123,
     TESTER_LLM_OUTPUT_PRICE: 0.456,
     TESTER_TIMEOUT_MS: 300_000,
+    TESTER_LLM_REQUEST_TIMEOUT_MS: 240_000,
     TEST_DIR: "src/__tests__",
     TEST_FILE_PATTERN: "*.test.ts",
     TEST_FRAMEWORK: "vitest",
@@ -69,10 +70,11 @@ describe("runTester API mode", () => {
       timedOut: false,
     })
 
-    const [systemPrompt, userPrompt, llmConfig, rootDir, _callbacks, _maxTurns, timeoutMs] = mockRunAgentLoop.mock.calls[0]
+    const [systemPrompt, userPrompt, llmConfig, rootDir, _callbacks, _maxTurns, timeoutMs, requestTimeoutMs] = mockRunAgentLoop.mock.calls[0]
     expect(systemPrompt).toBe("あなたはテストエンジニアです。仕様に基づいてテストファイルを作成してください。")
     expect(rootDir).toBe("/tmp/worktree")
     expect(timeoutMs).toBe(300_000)
+    expect(requestTimeoutMs).toBe(240_000)
     expect(llmConfig).toEqual({
       apiKey: "tester-key",
       baseUrl: "http://localhost:8081",

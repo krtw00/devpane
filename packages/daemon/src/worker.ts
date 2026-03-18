@@ -75,6 +75,7 @@ export async function runWorker(task: Task, worktreePath: string, testFiles: str
       callbacks,
       undefined,
       config.WORKER_TIMEOUT_MS,
+      config.WORKER_LLM_REQUEST_TIMEOUT_MS,
     )
 
     return {

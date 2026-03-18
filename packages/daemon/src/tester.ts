@@ -144,6 +144,7 @@ export async function runTester(spec: PmOutput, worktreePath: string, taskId?: s
       callbacks,
       undefined,
       config.TESTER_TIMEOUT_MS,
+      config.TESTER_LLM_REQUEST_TIMEOUT_MS,
     )
 
     appendLog(taskId ?? "tester", "tester", `[done] turns=${result.turns} tool_calls=${result.tool_calls_count} test_files=${testFiles.length}`)

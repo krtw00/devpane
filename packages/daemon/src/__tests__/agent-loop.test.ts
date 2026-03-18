@@ -146,4 +146,17 @@ describe("runAgentLoop", () => {
     expect(onToolResult).toHaveBeenCalledWith("read_file", "file content", false)
     expect(onText).toHaveBeenCalledWith("final")
   })
+
+  it("uses the provided per-request timeout bounded by the remaining loop timeout", async () => {
+    mockChat.mockResolvedValueOnce(makeResult({ text: "done", finish_reason: "stop" }))
+
+    await runAgentLoop("system", "user", CONFIG, "/tmp", undefined, 30, 600_000, 45_000)
+
+    expect(mockChat).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Array),
+      CONFIG,
+      45_000,
+    )
+  })
 })
