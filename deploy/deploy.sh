@@ -3,24 +3,27 @@ set -euo pipefail
 
 HOST="${DEPLOY_HOST:-apps-vps}"
 REMOTE_DIR="/opt/devpane"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-$(git branch --show-current)}"
 
-echo "==> Deploying DevPane to ${HOST}:${REMOTE_DIR}"
+if [ -z "${DEPLOY_BRANCH}" ]; then
+  echo "ERROR: failed to determine deploy branch" >&2
+  exit 1
+fi
 
-# Sync project files
-rsync -az --delete \
-  --exclude node_modules \
-  --exclude .git \
-  --exclude .env \
-  --exclude .env.* \
-  --exclude .worktrees \
-  --exclude data \
-  --exclude '*.db' \
-  --exclude '*.db-wal' \
-  --exclude '*.db-shm' \
-  ./ "${HOST}:${REMOTE_DIR}/"
+echo "==> Deploying DevPane branch ${DEPLOY_BRANCH} to ${HOST}:${REMOTE_DIR}"
 
-# Rebuild and restart on remote
-ssh "${HOST}" "cd ${REMOTE_DIR} && pnpm install --frozen-lockfile && pnpm build && systemctl --user restart devpane.service"
+ssh "${HOST}" "
+  set -euo pipefail
+  cd ${REMOTE_DIR}
+  systemctl --user stop devpane.service || true
+  git fetch origin ${DEPLOY_BRANCH}
+  git checkout -B ${DEPLOY_BRANCH} origin/${DEPLOY_BRANCH}
+  git reset --hard origin/${DEPLOY_BRANCH}
+  git clean -fd -e .env -e '.env.*' -e data -e .worktrees
+  pnpm install --frozen-lockfile
+  pnpm build
+  systemctl --user restart devpane.service
+"
 
 echo "==> Deploy complete"
 echo "  NOTE: remote .env was preserved; edit ${REMOTE_DIR}/.env on ${HOST} if needed"
