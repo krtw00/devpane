@@ -3,6 +3,7 @@ import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { emit } from "./events.js"
 import { AgentLoopTimeoutError, runAgentLoop, type AgentLoopCallbacks } from "./agent-loop.js"
+import { getRoleLlmConfig } from "./role-llm-config.js"
 import { matchesTestFilePattern, testFileSuffix as suffixFromPattern } from "./test-file-pattern.js"
 
 export type TesterResult = {
@@ -113,17 +114,7 @@ export async function runTester(spec: PmOutput, worktreePath: string, taskId?: s
   let toolCallsCount = 0
 
   try {
-    if (!config.LLM_API_KEY || !config.LLM_BASE_URL || !config.LLM_MODEL) {
-      throw new Error("LLM_API_KEY, LLM_BASE_URL, LLM_MODEL are required when LLM_BACKEND=openai-compatible")
-    }
-
-    const llmConfig = {
-      apiKey: config.LLM_API_KEY,
-      baseUrl: config.LLM_BASE_URL,
-      model: config.LLM_MODEL,
-      inputPricePerToken: config.LLM_INPUT_PRICE ?? undefined,
-      outputPricePerToken: config.LLM_OUTPUT_PRICE ?? undefined,
-    }
+    const llmConfig = getRoleLlmConfig("tester")
 
     const callbacks: AgentLoopCallbacks = {
       onText: (text) => {

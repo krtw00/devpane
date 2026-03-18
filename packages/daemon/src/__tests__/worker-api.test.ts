@@ -24,6 +24,11 @@ vi.mock("../config.js", () => ({
     LLM_MODEL: "test-model",
     LLM_INPUT_PRICE: null,
     LLM_OUTPUT_PRICE: null,
+    WORKER_LLM_API_KEY: "worker-key",
+    WORKER_LLM_BASE_URL: "http://localhost:8082",
+    WORKER_LLM_MODEL: "worker-model",
+    WORKER_LLM_INPUT_PRICE: 0.111,
+    WORKER_LLM_OUTPUT_PRICE: 0.222,
     WORKER_TIMEOUT_MS: 600_000,
     BUILD_CMD: "pnpm build",
     TEST_CMD: "pnpm test",
@@ -80,11 +85,11 @@ describe("runWorker API mode", () => {
     expect(rootDir).toBe("/tmp/worktree")
     expect(timeoutMs).toBe(600_000)
     expect(llmConfig).toEqual({
-      apiKey: "test-key",
-      baseUrl: "http://localhost:8080",
-      model: "test-model",
-      inputPricePerToken: undefined,
-      outputPricePerToken: undefined,
+      apiKey: "worker-key",
+      baseUrl: "http://localhost:8082",
+      model: "worker-model",
+      inputPricePerToken: 0.111,
+      outputPricePerToken: 0.222,
     })
     expect(userPrompt).toContain("Implement X")
     expect(userPrompt).toContain("src/__tests__/x.test.ts")

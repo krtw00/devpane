@@ -79,6 +79,24 @@ export const config: Config = {
   LLM_MODEL: optionalEnv("LLM_MODEL"),
   LLM_INPUT_PRICE: process.env.LLM_INPUT_PRICE ? Number(process.env.LLM_INPUT_PRICE) : null,
   LLM_OUTPUT_PRICE: process.env.LLM_OUTPUT_PRICE ? Number(process.env.LLM_OUTPUT_PRICE) : null,
+  TESTER_LLM_API_KEY: optionalEnv("TESTER_LLM_API_KEY") ?? optionalEnv("LLM_API_KEY"),
+  TESTER_LLM_BASE_URL: optionalEnv("TESTER_LLM_BASE_URL") ?? optionalEnv("LLM_BASE_URL"),
+  TESTER_LLM_MODEL: optionalEnv("TESTER_LLM_MODEL") ?? optionalEnv("LLM_MODEL"),
+  TESTER_LLM_INPUT_PRICE: process.env.TESTER_LLM_INPUT_PRICE
+    ? Number(process.env.TESTER_LLM_INPUT_PRICE)
+    : (process.env.LLM_INPUT_PRICE ? Number(process.env.LLM_INPUT_PRICE) : null),
+  TESTER_LLM_OUTPUT_PRICE: process.env.TESTER_LLM_OUTPUT_PRICE
+    ? Number(process.env.TESTER_LLM_OUTPUT_PRICE)
+    : (process.env.LLM_OUTPUT_PRICE ? Number(process.env.LLM_OUTPUT_PRICE) : null),
+  WORKER_LLM_API_KEY: optionalEnv("WORKER_LLM_API_KEY") ?? optionalEnv("LLM_API_KEY"),
+  WORKER_LLM_BASE_URL: optionalEnv("WORKER_LLM_BASE_URL") ?? optionalEnv("LLM_BASE_URL"),
+  WORKER_LLM_MODEL: optionalEnv("WORKER_LLM_MODEL") ?? optionalEnv("LLM_MODEL"),
+  WORKER_LLM_INPUT_PRICE: process.env.WORKER_LLM_INPUT_PRICE
+    ? Number(process.env.WORKER_LLM_INPUT_PRICE)
+    : (process.env.LLM_INPUT_PRICE ? Number(process.env.LLM_INPUT_PRICE) : null),
+  WORKER_LLM_OUTPUT_PRICE: process.env.WORKER_LLM_OUTPUT_PRICE
+    ? Number(process.env.WORKER_LLM_OUTPUT_PRICE)
+    : (process.env.LLM_OUTPUT_PRICE ? Number(process.env.LLM_OUTPUT_PRICE) : null),
   ISSUE_SYNC_ENABLED: env("ISSUE_SYNC_ENABLED", "false") === "true",
   ISSUE_SYNC_LABELS: optionalEnv("ISSUE_SYNC_LABELS"),
   ISSUE_SYNC_INTERVAL_SEC: Number(env("ISSUE_SYNC_INTERVAL_SEC", "3600")),

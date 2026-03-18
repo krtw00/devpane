@@ -20,6 +20,11 @@ vi.mock("../config.js", () => ({
     LLM_MODEL: "test-model",
     LLM_INPUT_PRICE: null,
     LLM_OUTPUT_PRICE: null,
+    TESTER_LLM_API_KEY: "tester-key",
+    TESTER_LLM_BASE_URL: "http://localhost:8081",
+    TESTER_LLM_MODEL: "tester-model",
+    TESTER_LLM_INPUT_PRICE: 0.123,
+    TESTER_LLM_OUTPUT_PRICE: 0.456,
     TESTER_TIMEOUT_MS: 300_000,
     TEST_DIR: "src/__tests__",
     TEST_FILE_PATTERN: "*.test.ts",
@@ -69,11 +74,11 @@ describe("runTester API mode", () => {
     expect(rootDir).toBe("/tmp/worktree")
     expect(timeoutMs).toBe(300_000)
     expect(llmConfig).toEqual({
-      apiKey: "test-key",
-      baseUrl: "http://localhost:8080",
-      model: "test-model",
-      inputPricePerToken: undefined,
-      outputPricePerToken: undefined,
+      apiKey: "tester-key",
+      baseUrl: "http://localhost:8081",
+      model: "tester-model",
+      inputPricePerToken: 0.123,
+      outputPricePerToken: 0.456,
     })
     expect(userPrompt).toContain("## Specification")
     expect(userPrompt).toContain("Task A")

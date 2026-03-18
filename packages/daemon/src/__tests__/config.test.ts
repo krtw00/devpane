@@ -114,6 +114,36 @@ describe("config env overrides", () => {
     vi.unstubAllEnvs()
   })
 
+  it("uses shared LLM config as fallback for tester/worker role config", async () => {
+    vi.stubEnv("LLM_API_KEY", "shared-key")
+    vi.stubEnv("LLM_BASE_URL", "https://example.com/v1")
+    vi.stubEnv("LLM_MODEL", "shared-model")
+    vi.stubEnv("LLM_INPUT_PRICE", "0.1")
+    vi.stubEnv("LLM_OUTPUT_PRICE", "0.2")
+    const config = await loadConfig()
+    expect(config.TESTER_LLM_API_KEY).toBe("shared-key")
+    expect(config.TESTER_LLM_BASE_URL).toBe("https://example.com/v1")
+    expect(config.TESTER_LLM_MODEL).toBe("shared-model")
+    expect(config.TESTER_LLM_INPUT_PRICE).toBe(0.1)
+    expect(config.TESTER_LLM_OUTPUT_PRICE).toBe(0.2)
+    expect(config.WORKER_LLM_API_KEY).toBe("shared-key")
+    expect(config.WORKER_LLM_BASE_URL).toBe("https://example.com/v1")
+    expect(config.WORKER_LLM_MODEL).toBe("shared-model")
+    expect(config.WORKER_LLM_INPUT_PRICE).toBe(0.1)
+    expect(config.WORKER_LLM_OUTPUT_PRICE).toBe(0.2)
+    vi.unstubAllEnvs()
+  })
+
+  it("overrides role-specific LLM config when tester/worker env is set", async () => {
+    vi.stubEnv("LLM_API_KEY", "shared-key")
+    vi.stubEnv("TESTER_LLM_API_KEY", "tester-key")
+    vi.stubEnv("WORKER_LLM_MODEL", "worker-model")
+    const config = await loadConfig()
+    expect(config.TESTER_LLM_API_KEY).toBe("tester-key")
+    expect(config.WORKER_LLM_MODEL).toBe("worker-model")
+    vi.unstubAllEnvs()
+  })
+
   // --- MEMORY_CLEANUP_THRESHOLD ---
 
   it("uses default MEMORY_CLEANUP_THRESHOLD=10 when env not set", async () => {

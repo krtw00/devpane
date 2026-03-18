@@ -301,6 +301,10 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
       testFiles = testerResult.testFiles
 
       if (testerResult.timedOut) {
+        if (testFiles.length > 0) {
+          console.warn(`[${workerId}] tester timed out for task ${task.id}, continuing with ${testFiles.length} generated test files`)
+          appendLog(task.id, "tester", `[timeout→continue] tester timed out, continuing with ${testFiles.length} generated test files`)
+        } else {
         console.error(`[${workerId}] tester timed out for task ${task.id}, skipping worker`)
         appendLog(task.id, "tester", `[timeout] tester timed out, skipping worker`)
         finishTask(task.id, "failed", JSON.stringify({ error: "tester_timeout" }))
@@ -311,6 +315,7 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
         removeWorktree(task.id)
         resetWorkerState(workerId)
         return
+        }
       }
 
       if (testerResult.exit_code !== 0) {

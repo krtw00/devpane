@@ -162,6 +162,16 @@ export type Config = {
   LLM_MODEL: string | null
   LLM_INPUT_PRICE: number | null
   LLM_OUTPUT_PRICE: number | null
+  TESTER_LLM_API_KEY: string | null
+  TESTER_LLM_BASE_URL: string | null
+  TESTER_LLM_MODEL: string | null
+  TESTER_LLM_INPUT_PRICE: number | null
+  TESTER_LLM_OUTPUT_PRICE: number | null
+  WORKER_LLM_API_KEY: string | null
+  WORKER_LLM_BASE_URL: string | null
+  WORKER_LLM_MODEL: string | null
+  WORKER_LLM_INPUT_PRICE: number | null
+  WORKER_LLM_OUTPUT_PRICE: number | null
   ISSUE_SYNC_ENABLED: boolean
   ISSUE_SYNC_LABELS: string | null
   ISSUE_SYNC_INTERVAL_SEC: number

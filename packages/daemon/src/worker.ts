@@ -2,6 +2,7 @@ import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { runAgentLoop, type AgentLoopCallbacks } from "./agent-loop.js"
+import { getRoleLlmConfig } from "./role-llm-config.js"
 import { broadcast } from "./ws.js"
 
 export type WorkerResult = {
@@ -43,17 +44,7 @@ function buildWorkerPrompt(task: Task, testFiles: string[]): string {
 
 export async function runWorker(task: Task, worktreePath: string, testFiles: string[] = []): Promise<WorkerResult> {
   try {
-    if (!config.LLM_API_KEY || !config.LLM_BASE_URL || !config.LLM_MODEL) {
-      throw new Error("LLM_API_KEY, LLM_BASE_URL, LLM_MODEL are required when LLM_BACKEND=openai-compatible")
-    }
-
-    const llmConfig = {
-      apiKey: config.LLM_API_KEY,
-      baseUrl: config.LLM_BASE_URL,
-      model: config.LLM_MODEL,
-      inputPricePerToken: config.LLM_INPUT_PRICE ?? undefined,
-      outputPricePerToken: config.LLM_OUTPUT_PRICE ?? undefined,
-    }
+    const llmConfig = getRoleLlmConfig("worker")
 
     const fullPrompt = buildWorkerPrompt(task, testFiles)
     const callbacks: AgentLoopCallbacks = {
