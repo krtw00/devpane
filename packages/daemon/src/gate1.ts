@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import { getAllDoneTitles, getRetryCount } from "./db.js"
 import { recall } from "./memory.js"
-import { isDuplicate } from "./pm.js"
+import { getBlockedTasks, isDuplicate } from "./pm.js"
 import { emit } from "./events.js"
 import { appendLog } from "./db.js"
 import { config } from "./config.js"
@@ -34,6 +34,11 @@ export function runGate1Rules(task: Task): Gate1Result {
   const doneTitles = getAllDoneTitles()
   if (isDuplicate(task.title, doneTitles)) {
     reasons.push(`duplicate of completed task`)
+  }
+
+  const blockedTitles = getBlockedTasks().map(t => t.title)
+  if (isDuplicate(task.title, blockedTitles)) {
+    reasons.push(`duplicate of blocked task`)
   }
 
   const features = recall("feature")

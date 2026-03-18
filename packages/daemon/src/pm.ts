@@ -20,6 +20,7 @@ type PmContext = {
   recentDone: Task[]
   allDoneTitles: string[]
   failedTasks: Task[]
+  blockedTasks: Task[]
   pendingTasks: Task[]
   memories: Memory[]
 }
@@ -93,6 +94,11 @@ function buildPmPrompt(context: PmContext): string {
       ? context.failedTasks.map(t => `- [failed] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
       : "(none)",
     "",
+    "## Blocked Tasks (suppressed or terminally failed — do NOT regenerate without human approval)",
+    context.blockedTasks.length > 0
+      ? context.blockedTasks.map(t => `- [blocked] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
+      : "(none)",
+    "",
     "## Current Queue",
     context.pendingTasks.length > 0
       ? context.pendingTasks.map(t => `- [pending] ${t.title}`).join("\n")
@@ -104,10 +110,12 @@ function buildPmPrompt(context: PmContext): string {
     "Based on the above, generate the next tasks to implement in priority order.",
     "",
     "【Task Generation Rules (STRICT)】",
-    "1. No duplicates: Do NOT generate tasks identical or similar to those in 'All Completed Tasks', 'Current Queue', 'Implemented Features' in memory, or 'Failed Tasks' unless you are explicitly splitting the failed work into a materially smaller, narrower follow-up. Different title but same functionality = duplicate. Violations are auto-rejected.",
+    "1. No duplicates: Do NOT generate tasks identical or similar to those in 'All Completed Tasks', 'Current Queue', 'Implemented Features' in memory, 'Failed Tasks', or 'Blocked Tasks'. Different title but same functionality = duplicate. Violations are auto-rejected.",
+    "1.1 Blocked work stays blocked: If a task family appears in 'Blocked Tasks', do not regenerate it under a new title, smaller scope, or alternate phrasing unless a human explicitly re-opens it.",
     "2. Scope: Prioritize improvements, bug fixes, test coverage, and stability over adding new features. Do NOT try to implement all unfinished features from vision.md.",
     `3. Implementability: Each task description must be specific enough for a Worker to implement independently. Include target files, expected behavior, and test plan. Max diff size: ${config.MAX_DIFF_SIZE} lines.`,
     "4. Granularity: 1 task = 1 PR. Split large tasks.",
+    "4.1 Keep scope narrow enough to stay under the diff budget. Prefer one file or one behavior change over broad refactors.",
     "5. Generate at most 3 tasks.",
     "",
     "Do NOT generate tasks that would break or remove already implemented features.",
@@ -156,6 +164,7 @@ export async function runPm(): Promise<PmOutput> {
     recentDone: getRecentDone(5),
     allDoneTitles: getAllDoneTitles(),
     failedTasks: getFailedTasks(),
+    blockedTasks: getBlockedTasks(),
     pendingTasks: getTasksByStatus("pending"),
     memories: recall(),
   }
@@ -206,11 +215,25 @@ function isRetryableFailedTask(task: Task): boolean {
   return true
 }
 
+export function getBlockedTasks(): Task[] {
+  const suppressed = getTasksByStatus("suppressed")
+  const terminalFailed = getFailedTasks().filter(task => !isRetryableFailedTask(task))
+  const blocked = [...suppressed]
+
+  for (const task of terminalFailed) {
+    if (blocked.some(existing => isDuplicate(task.title, [existing.title]))) continue
+    blocked.push(task)
+  }
+
+  return blocked
+}
+
 export function ingestPmTasks(output: PmOutput): Task[] {
   const doneTitles = getAllDoneTitles()
   const pendingTitles = getTasksByStatus("pending").map(t => t.title)
+  const blockedTitles = getBlockedTasks().map(t => t.title)
   const failedTasks = getFailedTasks()
-  const existingTitles = [...doneTitles, ...pendingTitles]
+  const existingTitles = [...doneTitles, ...pendingTitles, ...blockedTitles]
 
   const created: Task[] = []
   for (const t of output.tasks) {

@@ -1,12 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { initDb, closeDb, createTask, startTask, finishTask, getDb, getTask } from "../db.js"
-import { ingestPmTasks } from "../pm.js"
+import { initDb, closeDb, createTask, startTask, finishTask, getDb, getTask, suppressTask } from "../db.js"
+import { ingestPmTasks, runPm } from "../pm.js"
 import type { PmOutput } from "@devpane/shared"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, "..", "..", "src", "migrations")
+
+const mockCallLlm = vi.fn()
+vi.mock("../llm-bridge.js", () => ({
+  callLlm: (...args: unknown[]) => mockCallLlm(...args),
+}))
+
+vi.mock("../ws.js", () => ({
+  broadcast: vi.fn(),
+}))
+
+vi.mock("../memory.js", () => ({
+  recall: vi.fn(() => []),
+}))
 
 describe("ingestPmTasks — failed task handling", () => {
   beforeEach(() => {
@@ -134,5 +147,37 @@ describe("ingestPmTasks — failed task handling", () => {
     const created = ingestPmTasks(pmOutput)
     expect(created).toHaveLength(0)
     expect(getTask(task.id)?.status).toBe("failed")
+  })
+
+  it("does not create a new task when a similar suppressed task already exists", () => {
+    const task = createTask("WebSocket接続のエラーハンドリング改善（再接続のみ）", "desc", "pm", 5)
+    suppressTask(task.id)
+
+    const pmOutput: PmOutput = {
+      tasks: [{ title: "WebSocket接続のエラーハンドリング改善", description: "same family", priority: 3 }],
+      reasoning: "retry under another title",
+    }
+
+    const created = ingestPmTasks(pmOutput)
+    expect(created).toHaveLength(0)
+  })
+
+  it("includes blocked tasks in the PM prompt so they are not regenerated", async () => {
+    const task = createTask("タスク実行履歴の詳細ビュー基本実装", "desc", "pm", 5)
+    suppressTask(task.id)
+    mockCallLlm.mockResolvedValue({
+      text: JSON.stringify({
+        tasks: [{ title: "別の新規タスク", description: "genuinely new task", priority: 1 }],
+        reasoning: "none",
+      }),
+      cost_usd: 0,
+      tokens_used: 0,
+    })
+
+    await runPm()
+
+    const [prompt] = mockCallLlm.mock.calls.at(-1) as [string]
+    expect(prompt).toContain("## Blocked Tasks")
+    expect(prompt).toContain("[blocked] タスク実行履歴の詳細ビュー基本実装")
   })
 })

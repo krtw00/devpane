@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { runGate1Rules, runGate1 } from "../gate1.js"
-import { initDb, closeDb, createTask, getDb, getAgentEvents } from "../db.js"
+import { initDb, closeDb, createTask, getDb, getAgentEvents, suppressTask } from "../db.js"
 import { remember } from "../memory.js"
 import type { Task } from "@devpane/shared"
 
@@ -74,6 +74,15 @@ describe("Gate1 Rules", () => {
     const result = runGate1Rules(makeTask({ title: "スケジューラ制御API" }))
     expect(result.verdict).toBe("kill")
     expect(result.reasons.some((r: string) => r.includes("feature memory"))).toBe(true)
+  })
+
+  it("kills task that duplicates a suppressed task", () => {
+    const blocked = createTask("WebSocket接続のエラーハンドリング改善（再接続のみ）", "実装する内容の詳細説明", "pm")
+    suppressTask(blocked.id)
+
+    const result = runGate1Rules(makeTask({ title: "WebSocket接続のエラーハンドリング改善" }))
+    expect(result.verdict).toBe("kill")
+    expect(result.reasons).toContain("duplicate of blocked task")
   })
 })
 
