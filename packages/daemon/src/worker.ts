@@ -1,6 +1,6 @@
 import type { Task } from "@devpane/shared"
 import { config } from "./config.js"
-import { appendLog } from "./db.js"
+import { appendLog, getTaskLogs } from "./db.js"
 import { runAgentLoop, type AgentLoopCallbacks } from "./agent-loop.js"
 import { getRoleLlmConfig } from "./role-llm-config.js"
 import { broadcast } from "./ws.js"
@@ -17,8 +17,33 @@ export function killAllWorkers(): void {
   // No-op: API mode does not spawn child processes
 }
 
+function truncateLog(text: string, max = 400): string {
+  return text.length <= max ? text : `${text.slice(0, max)}...`
+}
+
+function collectRetryContext(task: Task): string[] {
+  if ((task.retry_count ?? 0) <= 0) return []
+
+  const relevantAgents = new Set(["worker", "gate3", "build", "system", "tester"])
+  const relevantPattern = /\[error\]|\[kill\]|\[recycle\]|tests failed|diff too large|exit_code=|no commit produced|no files changed|lint errors|timed out|max retries/i
+
+  const seen = new Set<string>()
+  const lines = getTaskLogs(task.id)
+    .filter((log) => relevantAgents.has(log.agent) && relevantPattern.test(log.message))
+    .slice(-5)
+    .map((log) => `${log.agent}: ${log.message.replace(/\s+/g, " ").trim()}`)
+    .filter((line) => {
+      if (seen.has(line)) return false
+      seen.add(line)
+      return true
+    })
+
+  return lines
+}
+
 function buildWorkerPrompt(task: Task, testFiles: string[]): string {
   const promptParts = [task.description]
+  const retryContext = collectRetryContext(task)
 
   if (testFiles.length > 0) {
     promptParts.push(
@@ -30,7 +55,22 @@ function buildWorkerPrompt(task: Task, testFiles: string[]): string {
     )
   }
 
+  if (retryContext.length > 0) {
+    promptParts.push(
+      "",
+      "## Retry Context",
+      "Previous attempt signals to address first:",
+      ...retryContext.map(line => `- ${line}`),
+    )
+  }
+
   promptParts.push(
+    "",
+    "## Execution Strategy (mandatory)",
+    "- Prefer targeted reads and targeted test commands for the files you change",
+    `- Avoid broad suite runs such as \`${config.TEST_CMD}\` during iteration; use them only for final verification`,
+    "- If command output is long, narrow it with a single test file, rg, head, or tail instead of rerunning the full command",
+    "- Fix the concrete failure in Retry Context before making unrelated changes",
     "",
     "## Quality Requirements (mandatory)",
     `- \`${config.BUILD_CMD}\` must pass (no type errors)`,
@@ -49,7 +89,7 @@ export async function runWorker(task: Task, worktreePath: string, testFiles: str
     const fullPrompt = buildWorkerPrompt(task, testFiles)
     const callbacks: AgentLoopCallbacks = {
       onText: (text) => {
-        appendLog(task.id, "worker", text)
+        appendLog(task.id, "worker", truncateLog(text))
         broadcast("worker:text", { taskId: task.id, text })
       },
       onToolCall: (name, args) => {
@@ -57,11 +97,11 @@ export async function runWorker(task: Task, worktreePath: string, testFiles: str
         broadcast("worker:tool", { taskId: task.id, tool: name })
 
         const json = JSON.stringify(args)
-        appendLog(task.id, "worker", `[tool_input] ${json}`)
+        appendLog(task.id, "worker", `[tool_input] ${truncateLog(json)}`)
         broadcast("worker:tool_input", { taskId: task.id, json })
       },
       onToolResult: (name, result) => {
-        const text = `[${name}] ${result}`
+        const text = `[${name}] ${truncateLog(result)}`
         appendLog(task.id, "worker", text)
         broadcast("worker:text", { taskId: task.id, text })
       },

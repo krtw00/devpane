@@ -102,6 +102,14 @@ describe("executeTool", () => {
       const result = executeTool("bash", { command: "exit 1" }, root)
       expect(result.is_error).toBe(true)
     })
+
+    it("truncates very long command output", () => {
+      const root = setup()
+      const result = executeTool("bash", { command: "python3 - <<'PY'\nprint('x' * 15000)\nPY" }, root)
+      expect(result.is_error).toBe(false)
+      expect(result.output.length).toBeLessThan(13_000)
+      expect(result.output).toContain("[output truncated; rerun with a narrower command")
+    })
   })
 
   describe("glob_files", () => {
