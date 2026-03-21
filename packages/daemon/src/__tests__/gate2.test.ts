@@ -93,6 +93,15 @@ describe("x", () => { it("y", () => {})
     expect(result.verdict).toBe("go")
   })
 
+  it("ignores non-test files mixed into the tester output", () => {
+    const content = `describe("x", () => { it("y", () => {}) })\n`
+    writeFileSync(join(workdir, "real.test.ts"), content)
+    writeFileSync(join(workdir, "009_add_task_execution_logs.sql"), "create table logs(id text);\n")
+    const result = runGate2(spec, ["009_add_task_execution_logs.sql", "real.test.ts"], workdir)
+    expect(result.verdict).toBe("go")
+    expect(result.reasons).toHaveLength(0)
+  })
+
   it("accepts test() as valid test block", () => {
     const content = `test("works", () => { expect(1).toBe(1) })\n`
     writeFileSync(join(workdir, "t.test.ts"), content)

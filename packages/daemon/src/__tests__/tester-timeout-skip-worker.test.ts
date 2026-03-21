@@ -70,7 +70,7 @@ vi.mock("../tester.js", () => ({
 
 const mockRunWorker = vi.fn<() => Promise<WorkerResult>>()
 vi.mock("../worker.js", () => ({
-  runWorker: () => mockRunWorker(),
+  runWorker: (...args: Parameters<typeof mockRunWorker>) => mockRunWorker(...args),
   killAllWorkers: vi.fn(),
 }))
 
@@ -158,6 +158,40 @@ describe("testerタイムアウト時のWorkerスキップ", () => {
     // task.failedイベントが発火されている
     const failed = emittedEvents.find(e => e.type === "task.failed")
     expect(failed).toBeTruthy()
+  })
+
+  it("testerがtimedOut=trueでも有効なテストファイルがある場合はWorkerへ進む", async () => {
+    const { executeTask } = await import("../scheduler.js")
+    mockRunTester.mockResolvedValue({ testFiles: ["src/__tests__/foo.test.ts"], exit_code: 143, timedOut: true })
+    mockRunWorker.mockResolvedValue({
+      exit_code: 0,
+      result_text: "done",
+      cost_usd: 0.05,
+      num_turns: 2,
+      duration_ms: 1000,
+    })
+    mockCollectFacts.mockReturnValue({
+      exit_code: 0,
+      files_changed: ["src/foo.ts"],
+      diff_stats: { additions: 5, deletions: 1 },
+      test_result: { passed: 1, failed: 0, exit_code: 0 },
+      lint_result: { errors: 0, exit_code: 0 },
+      branch: "devpane/task-test",
+      commit_hash: "abc123",
+    })
+    mockRunGate3.mockReturnValue({ verdict: "go", reasons: [] })
+    mockCreatePullRequest.mockReturnValue("https://github.com/test/pr/1")
+    mockAutoMergePr.mockReturnValue(true)
+    const task = makeTask()
+
+    await executeTask(task)
+
+    expect(mockRunGate2).toHaveBeenCalled()
+    expect(mockRunWorker).toHaveBeenCalledWith(task, "/tmp/worktree", ["src/__tests__/foo.test.ts"])
+    expect(mockRunGate3).toHaveBeenCalled()
+
+    const updated = getTask(task.id)
+    expect(updated?.status).toBe("done")
   })
 
   it("testerがtimedOut=falseを返した場合、通常通りGate2→Workerへ進む", async () => {

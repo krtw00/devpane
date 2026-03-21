@@ -27,6 +27,15 @@ vi.mock("../ws.js", () => ({
   broadcast: vi.fn(),
 }))
 
+const mockSendMessage = vi.fn(() => Promise.resolve())
+vi.mock("../notifier-factory.js", () => ({
+  getNotifier: vi.fn(() => ({
+    sendMessage: mockSendMessage,
+    sendReport: vi.fn(),
+    notify: vi.fn(),
+  })),
+}))
+
 vi.mock("../db.js", () => ({
   getNextPending: vi.fn(() => null),
   getTasksByStatus: vi.fn(() => []),
@@ -41,6 +50,8 @@ vi.mock("../db.js", () => ({
   getAgentEvents: vi.fn(() => []),
   getDb: vi.fn(),
   recoverOrphanedTasks: vi.fn(() => []),
+  suppressTerminalFailedTask: vi.fn(() => null),
+  suppressTerminalFailedTasks: vi.fn(() => []),
 }))
 
 vi.mock("../worktree.js", () => ({
@@ -259,5 +270,58 @@ describe("callPm内バックオフsleepがpause/stopに即座に応答する", (
     await vi.advanceTimersByTimeAsync(mockConfig.PM_RETRY_INTERVAL_SEC * 1000)
     // idle sleep分も進める
     await vi.advanceTimersByTimeAsync(mockConfig.IDLE_INTERVAL_SEC * 1000 + 1000)
+  })
+
+  it("_callPm直接呼び出し: fatalなLLMエラーではスケジューラをpauseする", async () => {
+    const { _callPm, getSchedulerState, resetPmConsecutiveFailures, resumeScheduler } = await import("../scheduler.js")
+    const { broadcast } = await import("../ws.js")
+
+    resetPmConsecutiveFailures()
+    mockRunPm.mockRejectedValue(new Error("LLM API error 402: {\"error\":{\"message\":\"Insufficient Balance\"}}"))
+
+    await _callPm()
+
+    expect(getSchedulerState().paused).toBe(true)
+    expect(broadcast).toHaveBeenCalledWith("scheduler:state", { paused: true })
+    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+
+    resumeScheduler()
+  })
+
+  it("Gate1のfatalなLLMエラーではretryを消費せずpendingへ戻してpauseする", async () => {
+    const { executeTask, getSchedulerState, resetPmConsecutiveFailures, resumeScheduler } = await import("../scheduler.js")
+    const { runGate1 } = await import("../gate1.js")
+    const { revertToPending, requeueTask } = await import("../db.js")
+
+    resetPmConsecutiveFailures()
+    vi.mocked(runGate1).mockResolvedValue({
+      verdict: "recycle",
+      reasons: ["LLM check failed: LLM API error 402: {\"error\":{\"message\":\"Insufficient Balance\"}}"],
+    })
+
+    await executeTask({
+      id: "task-1",
+      title: "fatal llm gate1",
+      description: "reproduce fatal gate1 handling",
+      status: "running",
+      priority: 1,
+      parent_id: null,
+      created_by: "pm",
+      assigned_to: "worker-0",
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      finished_at: null,
+      result: null,
+      cost_usd: 0,
+      tokens_used: 0,
+      retry_count: 0,
+      constraints: null,
+    })
+
+    expect(getSchedulerState().paused).toBe(true)
+    expect(revertToPending).toHaveBeenCalledWith("task-1")
+    expect(requeueTask).not.toHaveBeenCalled()
+
+    resumeScheduler()
   })
 })

@@ -10,6 +10,7 @@ vi.mock("../ws.js", () => ({
 
 vi.mock("../db.js", () => ({
   appendLog: vi.fn(),
+  getTaskLogs: vi.fn(() => []),
 }))
 
 vi.mock("../events.js", () => ({
@@ -24,7 +25,13 @@ vi.mock("../config.js", () => ({
     LLM_MODEL: "test-model",
     LLM_INPUT_PRICE: null,
     LLM_OUTPUT_PRICE: null,
+    WORKER_LLM_API_KEY: "worker-key",
+    WORKER_LLM_BASE_URL: "http://localhost:8082",
+    WORKER_LLM_MODEL: "worker-model",
+    WORKER_LLM_INPUT_PRICE: 0.111,
+    WORKER_LLM_OUTPUT_PRICE: 0.222,
     WORKER_TIMEOUT_MS: 600_000,
+    WORKER_LLM_REQUEST_TIMEOUT_MS: 180_000,
     BUILD_CMD: "pnpm build",
     TEST_CMD: "pnpm test",
   },
@@ -33,15 +40,17 @@ vi.mock("../config.js", () => ({
 import { runWorker } from "../worker.js"
 import { runAgentLoop } from "../agent-loop.js"
 import { broadcast } from "../ws.js"
-import { appendLog } from "../db.js"
+import { appendLog, getTaskLogs } from "../db.js"
 
 const mockRunAgentLoop = vi.mocked(runAgentLoop)
 const mockBroadcast = vi.mocked(broadcast)
 const mockAppendLog = vi.mocked(appendLog)
+const mockGetTaskLogs = vi.mocked(getTaskLogs)
 
 describe("runWorker API mode", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetTaskLogs.mockReturnValue([])
   })
 
   it("builds WorkerResult from AgentLoopResult", async () => {
@@ -75,16 +84,17 @@ describe("runWorker API mode", () => {
       duration_ms: 1234,
     })
 
-    const [systemPrompt, userPrompt, llmConfig, rootDir, _callbacks, _maxTurns, timeoutMs] = mockRunAgentLoop.mock.calls[0]
+    const [systemPrompt, userPrompt, llmConfig, rootDir, _callbacks, _maxTurns, timeoutMs, requestTimeoutMs] = mockRunAgentLoop.mock.calls[0]
     expect(systemPrompt).toBe("あなたは優秀なソフトウェアエンジニアです。ツールを使ってタスクを完遂してください。")
     expect(rootDir).toBe("/tmp/worktree")
     expect(timeoutMs).toBe(600_000)
+    expect(requestTimeoutMs).toBe(180_000)
     expect(llmConfig).toEqual({
-      apiKey: "test-key",
-      baseUrl: "http://localhost:8080",
-      model: "test-model",
-      inputPricePerToken: undefined,
-      outputPricePerToken: undefined,
+      apiKey: "worker-key",
+      baseUrl: "http://localhost:8082",
+      model: "worker-model",
+      inputPricePerToken: 0.111,
+      outputPricePerToken: 0.222,
     })
     expect(userPrompt).toContain("Implement X")
     expect(userPrompt).toContain("src/__tests__/x.test.ts")
@@ -112,6 +122,52 @@ describe("runWorker API mode", () => {
     expect(result.num_turns).toBe(0)
     expect(result.result_text).toBe("")
     expect(result.duration_ms).toBe(0)
+  })
+
+  it("injects retry context into the worker prompt", async () => {
+    mockGetTaskLogs.mockReturnValue([
+      {
+        id: "log-1",
+        task_id: "task-retry",
+        agent: "gate3",
+        message: "[recycle] tests failed: 2",
+        timestamp: "2026-03-20T00:00:00.000Z",
+      },
+      {
+        id: "log-2",
+        task_id: "task-retry",
+        agent: "worker",
+        message: "[error] command output too large",
+        timestamp: "2026-03-20T00:00:01.000Z",
+      },
+    ])
+    mockRunAgentLoop.mockResolvedValueOnce({
+      text: "done",
+      cost_usd: 0,
+      tokens_in: 0,
+      tokens_out: 0,
+      turns: 1,
+      duration_ms: 10,
+      tool_calls_count: 0,
+    })
+
+    const task = {
+      id: "task-retry",
+      title: "Retry task",
+      description: "Fix the failing implementation",
+      status: "running" as const,
+      created_by: "pm" as const,
+      created_at: "",
+      updated_at: "",
+      retry_count: 1,
+    }
+
+    await runWorker(task, "/tmp/worktree", ["src/__tests__/retry.test.ts"])
+
+    const [, userPrompt] = mockRunAgentLoop.mock.calls[0]
+    expect(userPrompt).toContain("## Retry Context")
+    expect(userPrompt).toContain("tests failed: 2")
+    expect(userPrompt).toContain("Avoid broad suite runs")
   })
 
   it("broadcasts callback events", async () => {

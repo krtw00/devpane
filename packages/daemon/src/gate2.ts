@@ -1,6 +1,8 @@
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import type { PmOutput } from "@devpane/shared"
+import { config } from "./config.js"
+import { matchesTestFilePattern } from "./test-file-pattern.js"
 
 // Gate 2: テスターが生成したテストファイルの妥当性チェック
 // 構造化仕様(PmOutput)に対してテストが最低限揃っているか判定する
@@ -14,7 +16,8 @@ export function runGate2(_spec: PmOutput, testFiles: string[], worktreePath: str
   const reasons: string[] = []
 
   // Rule 1: テストファイルが1つ以上存在する
-  const existing = testFiles.filter(f => existsSync(join(worktreePath, f)))
+  const candidates = testFiles.filter((f) => matchesTestFilePattern(f, config.TEST_FILE_PATTERN))
+  const existing = candidates.filter(f => existsSync(join(worktreePath, f)))
   if (existing.length === 0) {
     reasons.push("no test files found")
     return { verdict: "recycle", reasons }

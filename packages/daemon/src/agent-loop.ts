@@ -19,6 +19,14 @@ export type AgentLoopResult = {
 
 const DEFAULT_MAX_TURNS = 30
 const DEFAULT_TIMEOUT_MS = 600_000
+const DEFAULT_LLM_REQUEST_TIMEOUT_MS = 120_000
+
+export class AgentLoopTimeoutError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "AgentLoopTimeoutError"
+  }
+}
 
 export async function runAgentLoop(
   systemPrompt: string,
@@ -28,6 +36,7 @@ export async function runAgentLoop(
   callbacks?: AgentLoopCallbacks,
   maxTurns: number = DEFAULT_MAX_TURNS,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  requestTimeoutMs: number = DEFAULT_LLM_REQUEST_TIMEOUT_MS,
 ): Promise<AgentLoopResult> {
   const startTime = Date.now()
   const tools = getToolDefinitions()
@@ -44,13 +53,19 @@ export async function runAgentLoop(
   let lastText = ""
 
   while (turns < maxTurns) {
-    // Timeout check
-    if (Date.now() - startTime > timeoutMs) {
-      break
+    const elapsedMs = Date.now() - startTime
+    const remainingMs = timeoutMs - elapsedMs
+    if (remainingMs <= 0) {
+      throw new AgentLoopTimeoutError(`agent loop timed out after ${timeoutMs}ms`)
     }
 
     turns++
-    const result: LlmResult = await chatCompletionWithTools(messages, tools, llmConfig)
+    const result: LlmResult = await chatCompletionWithTools(
+      messages,
+      tools,
+      llmConfig,
+      Math.min(requestTimeoutMs, remainingMs),
+    )
 
     totalCost += result.cost_usd
     totalTokensIn += result.tokens_in

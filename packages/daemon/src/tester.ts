@@ -2,7 +2,9 @@ import type { PmOutput } from "@devpane/shared"
 import { config } from "./config.js"
 import { appendLog } from "./db.js"
 import { emit } from "./events.js"
-import { runAgentLoop, type AgentLoopCallbacks } from "./agent-loop.js"
+import { AgentLoopTimeoutError, runAgentLoop, type AgentLoopCallbacks } from "./agent-loop.js"
+import { getRoleLlmConfig } from "./role-llm-config.js"
+import { matchesTestFilePattern, testFileSuffix as suffixFromPattern } from "./test-file-pattern.js"
 
 export type TesterResult = {
   testFiles: string[]
@@ -50,7 +52,15 @@ export function buildTesterPrompt(spec: PmOutput): string {
 
 function testFileSuffix(): string {
   // "*.test.ts" → ".test.ts"
-  return config.TEST_FILE_PATTERN.replace(/^\*/, "")
+  return suffixFromPattern(config.TEST_FILE_PATTERN)
+}
+
+function isConfiguredTestFile(filePath: string): boolean {
+  return matchesTestFilePattern(filePath, config.TEST_FILE_PATTERN)
+}
+
+function truncateLog(text: string, max = 400): string {
+  return text.length <= max ? text : `${text.slice(0, max)}...`
 }
 
 export function parseTesterOutput(stdout: string): string[] {
@@ -90,6 +100,7 @@ export function parseTesterOutput(stdout: string): string[] {
 }
 
 function isTimeoutError(error: unknown): boolean {
+  if (error instanceof AgentLoopTimeoutError) return true
   if (!(error instanceof Error)) return false
   if (error.name === "AbortError") return true
   const message = error.message.toLowerCase()
@@ -99,29 +110,33 @@ function isTimeoutError(error: unknown): boolean {
 export async function runTester(spec: PmOutput, worktreePath: string, taskId?: string): Promise<TesterResult> {
   const testFiles: string[] = []
   const startedAt = Date.now()
+  let lastToolName: string | null = null
+  let toolCallsCount = 0
 
   try {
-    if (!config.LLM_API_KEY || !config.LLM_BASE_URL || !config.LLM_MODEL) {
-      throw new Error("LLM_API_KEY, LLM_BASE_URL, LLM_MODEL are required when LLM_BACKEND=openai-compatible")
-    }
-
-    const llmConfig = {
-      apiKey: config.LLM_API_KEY,
-      baseUrl: config.LLM_BASE_URL,
-      model: config.LLM_MODEL,
-      inputPricePerToken: config.LLM_INPUT_PRICE ?? undefined,
-      outputPricePerToken: config.LLM_OUTPUT_PRICE ?? undefined,
-    }
+    const llmConfig = getRoleLlmConfig("tester")
 
     const callbacks: AgentLoopCallbacks = {
+      onText: (text) => {
+        appendLog(taskId ?? "tester", "tester", `[text] ${truncateLog(text)}`)
+      },
       onToolCall: (name, args) => {
-        if (name === "write_file" && typeof args.path === "string" && !testFiles.includes(args.path)) {
+        lastToolName = name
+        toolCallsCount++
+        appendLog(taskId ?? "tester", "tester", `[tool] ${name}`)
+        if (name === "write_file" && typeof args.path === "string" && isConfiguredTestFile(args.path) && !testFiles.includes(args.path)) {
           testFiles.push(args.path)
         }
+        if (typeof args.path === "string") {
+          appendLog(taskId ?? "tester", "tester", `[tool_input] ${truncateLog(JSON.stringify({ path: args.path }))}`)
+        }
+      },
+      onToolResult: (name, result, isError) => {
+        appendLog(taskId ?? "tester", "tester", `[${name}${isError ? ":error" : ""}] ${truncateLog(result)}`)
       },
     }
 
-    await runAgentLoop(
+    const result = await runAgentLoop(
       "あなたはテストエンジニアです。仕様に基づいてテストファイルを作成してください。",
       buildTesterPrompt(spec),
       llmConfig,
@@ -129,7 +144,10 @@ export async function runTester(spec: PmOutput, worktreePath: string, taskId?: s
       callbacks,
       undefined,
       config.TESTER_TIMEOUT_MS,
+      config.TESTER_LLM_REQUEST_TIMEOUT_MS,
     )
+
+    appendLog(taskId ?? "tester", "tester", `[done] turns=${result.turns} tool_calls=${result.tool_calls_count} test_files=${testFiles.length}`)
 
     return {
       testFiles,
@@ -142,7 +160,14 @@ export async function runTester(spec: PmOutput, worktreePath: string, taskId?: s
       emit({ type: "task.failed", taskId: taskId ?? "tester", rootCause: "timeout" })
     }
     const elapsedMs = Date.now() - startedAt
-    appendLog(taskId ?? "tester", "tester", `[error] ${error instanceof Error ? error.message : String(error)} (elapsed=${elapsedMs}ms)`)
+    const parts = [
+      `[error] ${error instanceof Error ? error.message : String(error)}`,
+      `elapsed=${elapsedMs}ms`,
+      `last_tool=${lastToolName ?? "none"}`,
+      `tool_calls=${toolCallsCount}`,
+      `test_files=${testFiles.length}`,
+    ]
+    appendLog(taskId ?? "tester", "tester", parts.join(" "))
     return {
       testFiles,
       exit_code: 1,

@@ -8,6 +8,8 @@ export type ToolResult = {
   is_error: boolean
 }
 
+const BASH_OUTPUT_LIMIT = 12_000
+
 function safePath(rootDir: string, filePath: string): string {
   const full = resolve(rootDir, filePath)
   if (!full.startsWith(resolve(rootDir))) {
@@ -137,6 +139,29 @@ function walkDir(dir: string, rootDir: string, results: string[]): void {
   }
 }
 
+function stripAnsi(text: string): string {
+  return text.replace(/\u001B\[[0-9;]*m/g, "")
+}
+
+function truncateBashOutput(output: string, maxChars = BASH_OUTPUT_LIMIT): string {
+  const clean = stripAnsi(output).trim()
+  if (clean.length <= maxChars) return clean
+
+  const headSize = Math.floor(maxChars * 0.65)
+  const tailSize = Math.floor(maxChars * 0.25)
+  const omitted = clean.length - headSize - tailSize
+
+  return [
+    clean.slice(0, headSize).trimEnd(),
+    "",
+    `...[truncated ${omitted} chars of command output]...`,
+    "",
+    clean.slice(-tailSize).trimStart(),
+    "",
+    "[output truncated; rerun with a narrower command such as a single test file, rg, head, or tail if more detail is needed]",
+  ].join("\n")
+}
+
 export function executeTool(name: string, args: Record<string, unknown>, rootDir: string): ToolResult {
   try {
     switch (name) {
@@ -172,11 +197,11 @@ export function executeTool(name: string, args: Record<string, unknown>, rootDir
             maxBuffer: 1024 * 1024,
             stdio: ["pipe", "pipe", "pipe"],
           })
-          return { output: stdout, is_error: false }
+          return { output: truncateBashOutput(stdout), is_error: false }
         } catch (err: unknown) {
           const e = err as { stdout?: string; stderr?: string; message?: string }
           const output = [e.stdout, e.stderr].filter(Boolean).join("\n") || e.message || "command failed"
-          return { output, is_error: true }
+          return { output: truncateBashOutput(output), is_error: true }
         }
       }
       case "glob_files": {
