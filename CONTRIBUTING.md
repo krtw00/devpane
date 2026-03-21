@@ -129,8 +129,8 @@ For large changes or new features, discuss the approach in an issue first. Small
 #### 2. Create a branch
 
 ```bash
-git checkout staging
-git pull origin staging
+git checkout main
+git pull origin main
 git checkout -b feat/your-feature   # New feature
 git checkout -b fix/your-bugfix     # Bug fix
 ```
@@ -383,8 +383,8 @@ main（安定版、保護）
 #### 2. ブランチを切る
 
 ```bash
-git checkout staging
-git pull origin staging
+git checkout main
+git pull origin main
 git checkout -b feat/your-feature   # 機能追加
 git checkout -b fix/your-bugfix     # バグ修正
 ```
