@@ -33,16 +33,44 @@ function readFileOr(path: string, fallback: string): string {
   }
 }
 
-function summarizeFacts(resultJson: string | null): string {
+type TaskResultSummary = {
+  exit_code?: number
+  files_changed?: unknown[]
+  diff_stats?: { additions?: number, deletions?: number }
+  test_result?: { passed?: number, failed?: number }
+  error?: string
+  gate1?: { reasons?: string[] }
+  gate3?: { reasons?: string[], failure?: { root_cause?: string } }
+}
+
+export function summarizeTaskResult(resultJson: string | null): string {
   if (!resultJson) return "no result"
   try {
-    const f = JSON.parse(resultJson)
-    const parts = [`exit:${f.exit_code}`, `files:${f.files_changed?.length ?? 0}`]
-    if (f.diff_stats) parts.push(`+${f.diff_stats.additions}/-${f.diff_stats.deletions}`)
-    if (f.test_result) parts.push(`tests:${f.test_result.passed}ok/${f.test_result.failed}fail`)
-    return parts.join(", ")
+    const f = JSON.parse(resultJson) as TaskResultSummary
+    const parts: string[] = []
+
+    if (typeof f.exit_code === "number") parts.push(`exit:${f.exit_code}`)
+    if (Array.isArray(f.files_changed)) parts.push(`files:${f.files_changed.length}`)
+    if (f.diff_stats && typeof f.diff_stats.additions === "number" && typeof f.diff_stats.deletions === "number") {
+      parts.push(`+${f.diff_stats.additions}/-${f.diff_stats.deletions}`)
+    }
+    if (f.test_result && typeof f.test_result.passed === "number" && typeof f.test_result.failed === "number") {
+      parts.push(`tests:${f.test_result.passed}ok/${f.test_result.failed}fail`)
+    }
+
+    const reasons = [
+      f.error,
+      ...(f.gate1?.reasons ?? []),
+      ...(f.gate3?.reasons ?? []),
+      f.gate3?.failure?.root_cause,
+    ].filter((value): value is string => typeof value === "string" && value.length > 0)
+
+    if (reasons.length > 0) parts.push(`reason:${reasons[0]}`)
+
+    return parts.length > 0 ? parts.join(", ") : "no result details"
   } catch {
-    return "parse error"
+    const compact = resultJson.replace(/\s+/g, " ").slice(0, 120)
+    return compact.length > 0 ? `raw:${compact}` : "parse error"
   }
 }
 
@@ -81,7 +109,7 @@ function buildPmPrompt(context: PmContext): string {
     "",
     "## Recent Completed Tasks (latest 5)",
     context.recentDone.length > 0
-      ? context.recentDone.map(t => `- [done] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
+      ? context.recentDone.map(t => `- [done] ${t.title}: ${summarizeTaskResult(t.result)}`).join("\n")
       : "(none)",
     "",
     "## All Completed Tasks (DO NOT generate duplicates)",
@@ -91,12 +119,12 @@ function buildPmPrompt(context: PmContext): string {
     "",
     "## Failed Tasks (unresolved)",
     context.failedTasks.length > 0
-      ? context.failedTasks.map(t => `- [failed] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
+      ? context.failedTasks.map(t => `- [failed] ${t.title}: ${summarizeTaskResult(t.result)}`).join("\n")
       : "(none)",
     "",
     "## Blocked Tasks (suppressed or terminally failed — do NOT regenerate without human approval)",
     context.blockedTasks.length > 0
-      ? context.blockedTasks.map(t => `- [blocked] ${t.title}: ${summarizeFacts(t.result)}`).join("\n")
+      ? context.blockedTasks.map(t => `- [blocked] ${t.title}: ${summarizeTaskResult(t.result)}`).join("\n")
       : "(none)",
     "",
     "## Current Queue",

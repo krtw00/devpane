@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parsePmOutput, isDuplicate } from "../pm.js"
+import { parsePmOutput, isDuplicate, summarizeTaskResult } from "../pm.js"
 
 describe("parsePmOutput", () => {
   it("parses direct JSON output", () => {
@@ -94,5 +94,30 @@ describe("isDuplicate", () => {
 
   it("handles empty existing list", () => {
     expect(isDuplicate("何でもいい", [])).toBe(false)
+  })
+})
+
+describe("summarizeTaskResult", () => {
+  it("includes gate failure reasons so PM can avoid regenerating stale work", () => {
+    const result = summarizeTaskResult(JSON.stringify({
+      gate1: {
+        verdict: "kill",
+        reasons: ["already implemented in current code"],
+      },
+      error: "already implemented in current code",
+    }))
+
+    expect(result).toContain("reason:already implemented in current code")
+  })
+
+  it("summarizes observable facts when they exist", () => {
+    const result = summarizeTaskResult(JSON.stringify({
+      exit_code: 0,
+      files_changed: ["a.ts", "b.ts"],
+      diff_stats: { additions: 10, deletions: 4 },
+      test_result: { passed: 3, failed: 1 },
+    }))
+
+    expect(result).toBe("exit:0, files:2, +10/-4, tests:3ok/1fail")
   })
 })

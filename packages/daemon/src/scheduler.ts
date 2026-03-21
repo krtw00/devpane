@@ -49,8 +49,25 @@ const RATE_LIMIT_PATTERNS = [
   /overloaded/i,
 ]
 
+const FATAL_LLM_PATTERNS = [
+  /insufficient balance/i,
+  /invalid api key/i,
+  /authentication/i,
+  /unauthorized/i,
+  /forbidden/i,
+  /model.*not found/i,
+  /does not have access/i,
+  /LLM API error 401/i,
+  /LLM API error 402/i,
+  /LLM API error 403/i,
+]
+
 export function isRateLimitError(message: string): boolean {
   return RATE_LIMIT_PATTERNS.some(p => p.test(message))
+}
+
+export function isFatalLlmError(message: string): boolean {
+  return FATAL_LLM_PATTERNS.some((pattern) => pattern.test(message))
 }
 
 export function isWithinActiveHours(hours: ActiveHours | null): boolean {
@@ -164,6 +181,15 @@ export function resumeScheduler(): void {
   paused = false
 }
 
+function pauseSchedulerForFatalLlm(message: string): void {
+  paused = true
+  appendLog("scheduler", "system", message)
+  broadcast("scheduler:state", { paused: true })
+  getNotifier().sendMessage(message).catch((err) => {
+    console.warn("[notifier] failed:", err)
+  })
+}
+
 const SHUTDOWN_TIMEOUT_MS = 30_000
 
 export async function stopScheduler(): Promise<void> {
@@ -215,6 +241,13 @@ async function callPm(): Promise<Task[]> {
     console.error(`[scheduler] PM failed (${pmConsecutiveFailures}x): ${msg}`)
     appendLog("scheduler", "pm", `[error] PM failed: ${msg}`)
 
+    if (isFatalLlmError(msg)) {
+      const message = `[scheduler] fatal LLM error during PM; scheduler paused: ${msg}`
+      console.error(message)
+      pauseSchedulerForFatalLlm(message)
+      return []
+    }
+
     if (pmConsecutiveFailures % 3 === 0) {
       const backoffSec = calculatePmBackoff(pmConsecutiveFailures)
       console.error(`[scheduler] PM failed ${pmConsecutiveFailures}x, cooling down ${backoffSec}s`)
@@ -261,7 +294,14 @@ export async function executeTask(task: Task, workerId = "worker-0"): Promise<vo
     console.log(`[${workerId}] Gate 1 RECYCLE task ${task.id}: ${gate1.reasons.join("; ")}`)
     emit({ type: "gate.rejected", taskId: task.id, gate: "gate1", verdict: "recycle", reason: gate1.reasons.join("; ") })
     appendLog(task.id, "gate1", `[recycle] ${gate1.reasons.join("; ")}`)
-    requeueTask(task.id)
+    if (gate1.reasons.some((reason) => isFatalLlmError(reason))) {
+      const message = `[scheduler] fatal LLM error during gate1; scheduler paused: ${gate1.reasons.join("; ")}`
+      console.error(message)
+      revertToPending(task.id)
+      pauseSchedulerForFatalLlm(message)
+    } else {
+      requeueTask(task.id)
+    }
     broadcast("task:updated", { id: task.id, status: "pending" })
     resetWorkerState(workerId)
     return
