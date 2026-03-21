@@ -34,14 +34,14 @@ vi.mock("../db.js", () => ({
   finishTask: vi.fn(),
   revertToPending: vi.fn(),
   requeueTask: vi.fn(),
+  suppressTerminalFailedTask: vi.fn(() => null),
+  suppressTerminalFailedTasks: vi.fn(() => []),
   getRetryCount: vi.fn(() => 0),
   appendLog: vi.fn(),
   updateTaskCost: vi.fn(),
   insertAgentEvent: vi.fn(),
   getAgentEvents: vi.fn(() => []),
   getDb: vi.fn(),
-  suppressTerminalFailedTask: vi.fn(() => null),
-  suppressTerminalFailedTasks: vi.fn(() => []),
 }))
 
 vi.mock("../worktree.js", () => ({
