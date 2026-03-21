@@ -179,7 +179,7 @@ describe("Gate1 recycle → retry_count消費", () => {
     await executeTask(afterRetries)
 
     const finalTask = getTask(task.id)!
-    expect(finalTask.status).toBe("failed")
+    expect(finalTask.status).toBe("suppressed")
   })
 
   it("Gate1 recycleが連続してもretry_countが毎回インクリメントされる", async () => {
