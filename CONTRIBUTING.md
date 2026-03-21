@@ -109,16 +109,18 @@ devpane/
 
 ```
 main (stable, protected)
-└── staging (integration, deployed to VPS)
+├── staging (pre-production integration)
+└── ai-develop (AI autonomous branch, deployed to VPS)
 ```
 
 | Branch | Purpose | Merge target |
 |--------|---------|-------------|
 | `main` | Stable release | — |
-| `staging` | Pre-production integration and VPS deploy | → main (PR) |
+| `staging` | Pre-production integration | → main (PR) |
+| `ai-develop` | Fully autonomous AI development | → staging (PR) |
 | `feat/*`, `fix/*` | Feature branches | → staging (PR) |
 
-**Important**: `staging` is the shared integration branch and deployed environment. Do not commit directly to it.
+**Important**: `staging` is the shared integration branch. `ai-develop` is reserved for autonomous AI work and is the VPS auto-deploy branch.
 
 ### Development workflow
 
@@ -168,7 +170,7 @@ test(pm): add tests for JSON parsing edge cases
 - One PR per change
 - Describe **why** the change is needed
 - Include test results
-- Target branch: `staging` (release PRs only go from `staging` to `main`)
+- Target branch: `staging` (AI promotion is `ai-develop` → `staging`, release PRs are `staging` → `main`)
 
 ### Common development tasks
 
@@ -363,16 +365,18 @@ devpane/
 
 ```
 main（安定版、保護）
-└── staging（統合用、VPS で自動稼働）
+├── staging（統合・事前検証用）
+└── ai-develop（AI 自走用、VPS で自動稼働）
 ```
 
 | ブランチ | 用途 | マージ先 |
 |---------|------|---------|
 | `main` | 安定リリース | — |
 | `staging` | 事前検証と統合 | → main (PR) |
+| `ai-develop` | 完全自律の AI 開発 | → staging (PR) |
 | `feat/*`, `fix/*` | 作業ブランチ | → staging (PR) |
 
-**重要**: `staging` は共有の統合ブランチ兼デプロイ先です。直接コミットしないでください。
+**重要**: `staging` は共有の統合ブランチです。`ai-develop` は AI デーモン専用で、VPS 自動デプロイ先として扱います。
 
 ### 開発フロー
 
@@ -422,7 +426,7 @@ test(pm): JSON パースのエッジケーステスト追加
 - 1 つの PR で 1 つの変更
 - 変更の目的（なぜ）を書く
 - テスト結果を含める
-- マージ先: `staging`（本番反映は `staging` → `main`）
+- マージ先: `staging`（AI 反映は `ai-develop` → `staging`、本番反映は `staging` → `main`）
 
 ### よくある開発タスク
 
