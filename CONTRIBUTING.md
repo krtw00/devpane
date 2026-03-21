@@ -109,18 +109,16 @@ devpane/
 
 ```
 main (stable, protected)
-├── develop (human development)
-└── ai-develop (AI autonomous, deployed to VPS)
+└── staging (integration, deployed to VPS)
 ```
 
 | Branch | Purpose | Merge target |
 |--------|---------|-------------|
 | `main` | Stable release | — |
-| `develop` | Human development | → main (PR) |
-| `ai-develop` | AI autonomous | → main (PR) |
-| `feat/*`, `fix/*` | Feature branches | → develop (PR) |
+| `staging` | Pre-production integration and VPS deploy | → main (PR) |
+| `feat/*`, `fix/*` | Feature branches | → staging (PR) |
 
-**Important**: `ai-develop` is managed by the AI daemon. Do not commit directly to it.
+**Important**: `staging` is the shared integration branch and deployed environment. Do not commit directly to it.
 
 ### Development workflow
 
@@ -131,8 +129,8 @@ For large changes or new features, discuss the approach in an issue first. Small
 #### 2. Create a branch
 
 ```bash
-git checkout develop
-git pull origin develop
+git checkout staging
+git pull origin staging
 git checkout -b feat/your-feature   # New feature
 git checkout -b fix/your-bugfix     # Bug fix
 ```
@@ -170,7 +168,7 @@ test(pm): add tests for JSON parsing edge cases
 - One PR per change
 - Describe **why** the change is needed
 - Include test results
-- Target branch: `develop` (not `main`)
+- Target branch: `staging` (release PRs only go from `staging` to `main`)
 
 ### Common development tasks
 
@@ -365,18 +363,16 @@ devpane/
 
 ```
 main（安定版、保護）
-├── develop（人間の開発用）
-└── ai-develop（AI 自走用、VPS で自動稼働）
+└── staging（統合用、VPS で自動稼働）
 ```
 
 | ブランチ | 用途 | マージ先 |
 |---------|------|---------|
 | `main` | 安定リリース | — |
-| `develop` | 人間の開発 | → main (PR) |
-| `ai-develop` | AI 自走 | → main (PR) |
-| `feat/*`, `fix/*` | 作業ブランチ | → develop (PR) |
+| `staging` | 事前検証と統合 | → main (PR) |
+| `feat/*`, `fix/*` | 作業ブランチ | → staging (PR) |
 
-**重要**: `ai-develop` は AI デーモンが管理しています。直接コミットしないでください。
+**重要**: `staging` は共有の統合ブランチ兼デプロイ先です。直接コミットしないでください。
 
 ### 開発フロー
 
@@ -387,8 +383,8 @@ main（安定版、保護）
 #### 2. ブランチを切る
 
 ```bash
-git checkout develop
-git pull origin develop
+git checkout staging
+git pull origin staging
 git checkout -b feat/your-feature   # 機能追加
 git checkout -b fix/your-bugfix     # バグ修正
 ```
@@ -426,7 +422,7 @@ test(pm): JSON パースのエッジケーステスト追加
 - 1 つの PR で 1 つの変更
 - 変更の目的（なぜ）を書く
 - テスト結果を含める
-- マージ先: `develop`（`main` ではない）
+- マージ先: `staging`（本番反映は `staging` → `main`）
 
 ### よくある開発タスク
 
