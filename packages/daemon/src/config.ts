@@ -32,6 +32,16 @@ function parseCorsOrigins(value: string | undefined): string[] | null {
   return origins.length > 0 ? origins : null
 }
 
+function isValidUrl(url: string): boolean {
+  try {
+    // Basic URL validation
+    new URL(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const config: Config = {
   APP_NAME: env("APP_NAME", "DevPane"),
   PROJECT_ROOT: env("PROJECT_ROOT", findGitRoot()),
@@ -121,4 +131,109 @@ function parseActiveHours(value: string | undefined): ActiveHours | null {
   const end = Number(match[2])
   if (start < 0 || start > 23 || end < 0 || end > 23) return null
   return { start, end }
+}
+
+export function validateEnv(): void {
+  const errors: string[] = []
+  
+  // Check LLM_BACKEND specific requirements
+  if (config.LLM_BACKEND === "openai-compatible") {
+    if (!config.LLM_API_KEY) {
+      errors.push("LLM_API_KEY is required")
+    }
+    if (!config.LLM_BASE_URL) {
+      errors.push("LLM_BASE_URL is required")
+    }
+    if (!config.LLM_MODEL) {
+      errors.push("LLM_MODEL is required")
+    }
+  }
+  
+  // Check PROJECT_ROOT
+  if (!config.PROJECT_ROOT || config.PROJECT_ROOT.trim() === "") {
+    errors.push("PROJECT_ROOT must be a valid directory path")
+  }
+  
+  // Check numeric values
+  if (isNaN(config.API_PORT) || config.API_PORT <= 0 || config.API_PORT > 65535) {
+    errors.push("API_PORT must be a valid port number (1-65535)")
+  }
+  
+  if (isNaN(config.WORKER_CONCURRENCY) || config.WORKER_CONCURRENCY <= 0) {
+    errors.push("WORKER_CONCURRENCY must be a positive integer")
+  }
+  
+  // Check timeout values
+  if (isNaN(config.WORKER_TIMEOUT_MS) || config.WORKER_TIMEOUT_MS <= 0) {
+    errors.push("WORKER_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (isNaN(config.TESTER_TIMEOUT_MS) || config.TESTER_TIMEOUT_MS <= 0) {
+    errors.push("TESTER_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (isNaN(config.PM_TIMEOUT_MS) || config.PM_TIMEOUT_MS <= 0) {
+    errors.push("PM_TIMEOUT_MS must be a positive number")
+  }
+  
+  // Check interval values
+  if (isNaN(config.IDLE_INTERVAL_SEC) || config.IDLE_INTERVAL_SEC <= 0) {
+    errors.push("IDLE_INTERVAL_SEC must be a positive number")
+  }
+  
+  if (isNaN(config.PM_RETRY_INTERVAL_SEC) || config.PM_RETRY_INTERVAL_SEC <= 0) {
+    errors.push("PM_RETRY_INTERVAL_SEC must be a positive number")
+  }
+  
+  if (isNaN(config.COOLDOWN_INTERVAL_SEC) || config.COOLDOWN_INTERVAL_SEC <= 0) {
+    errors.push("COOLDOWN_INTERVAL_SEC must be a positive number")
+  }
+  
+  // Check ACTIVE_HOURS format if provided
+  if (process.env.ACTIVE_HOURS && !config.ACTIVE_HOURS) {
+    errors.push("ACTIVE_HOURS must be in format 'HH-HH' where HH is 0-23")
+  }
+  
+  // Check CORS_ORIGIN format if provided
+  if (process.env.CORS_ORIGIN) {
+    if (config.CORS_ORIGIN === null) {
+      errors.push("CORS_ORIGIN must be a comma-separated list of valid URLs")
+    } else if (config.CORS_ORIGIN) {
+      // Validate each URL
+      const invalidUrls = config.CORS_ORIGIN.filter((url: string) => !isValidUrl(url))
+      if (invalidUrls.length > 0) {
+        errors.push(`CORS_ORIGIN must contain valid URLs (invalid: ${invalidUrls.join(", ")})`)
+      }
+    }
+  }
+  
+  // Check BUILD_TIMEOUT_MS, TEST_TIMEOUT_MS, LINT_TIMEOUT_MS
+  if (isNaN(config.BUILD_TIMEOUT_MS) || config.BUILD_TIMEOUT_MS <= 0) {
+    errors.push("BUILD_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (isNaN(config.TEST_TIMEOUT_MS) || config.TEST_TIMEOUT_MS <= 0) {
+    errors.push("TEST_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (isNaN(config.LINT_TIMEOUT_MS) || config.LINT_TIMEOUT_MS <= 0) {
+    errors.push("LINT_TIMEOUT_MS must be a positive number")
+  }
+  
+  // Check LLM timeout values
+  if (isNaN(config.LLM_REQUEST_TIMEOUT_MS) || config.LLM_REQUEST_TIMEOUT_MS <= 0) {
+    errors.push("LLM_REQUEST_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (isNaN(config.TESTER_LLM_REQUEST_TIMEOUT_MS) || config.TESTER_LLM_REQUEST_TIMEOUT_MS <= 0) {
+    errors.push("TESTER_LLM_REQUEST_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (isNaN(config.WORKER_LLM_REQUEST_TIMEOUT_MS) || config.WORKER_LLM_REQUEST_TIMEOUT_MS <= 0) {
+    errors.push("WORKER_LLM_REQUEST_TIMEOUT_MS must be a positive number")
+  }
+  
+  if (errors.length > 0) {
+    throw new Error(`Environment validation failed:\n${errors.join("\n")}`)
+  }
 }
