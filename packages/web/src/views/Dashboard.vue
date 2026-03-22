@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, inject, onMounted, onUnmounted, nextTick, watch, type Ref } from 'vue'
+import { ref, inject, onMounted, onUnmounted, nextTick, watch, computed, type Ref } from 'vue'
 import {
   fetchSchedulerStatus, fetchPipelineStats, fetchEvents,
   pauseScheduler, resumeScheduler,
   fetchSpcMetric, fetchImprovements, revertImprovement,
+  useTasks,
   type PipelineStats, type SchedulerStatus, type AgentEvent,
   type SpcMetricData, type Improvement,
 } from '../composables/useApi'
@@ -20,6 +21,52 @@ const recentEvents = ref<AgentEvent[]>([])
 
 const apiError = ref<string | null>(null)
 
+// Success rate component
+const { tasks, refresh: refreshTasks } = useTasks()
+
+// Filter recent tasks (last 24 hours or last 50 tasks)
+const recentTasks = computed(() => {
+  if (!tasks.value.length) return []
+  
+  // Sort by created_at descending (most recent first)
+  const sortedTasks = [...tasks.value].sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+  
+  // Get tasks from last 24 hours
+  const now = new Date()
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  
+  const recentByTime = sortedTasks.filter(task => {
+    const taskDate = new Date(task.created_at)
+    return taskDate >= twentyFourHoursAgo
+  })
+  
+  // Use tasks from last 24 hours if available, otherwise use last 50 tasks
+  if (recentByTime.length > 0) {
+    return recentByTime
+  } else {
+    return sortedTasks.slice(0, 50)
+  }
+})
+
+// Calculate success rate
+const successRate = computed(() => {
+  const recent = recentTasks.value
+  if (recent.length === 0) return 0
+  
+  const doneTasks = recent.filter(task => task.status === 'done').length
+  return (doneTasks / recent.length) * 100
+})
+
+// Determine color based on success rate
+const successRateColor = computed(() => {
+  const rate = successRate.value
+  if (rate >= 80) return 'green'
+  if (rate >= 50) return 'yellow'
+  return 'red'
+})
+
 const spcCost = ref<SpcMetricData | null>(null)
 const spcExecTime = ref<SpcMetricData | null>(null)
 const spcDiffSize = ref<SpcMetricData | null>(null)
@@ -31,6 +78,7 @@ async function refreshStatus() {
     scheduler.value = await fetchSchedulerStatus()
     pipeline.value = await fetchPipelineStats()
     recentEvents.value = await fetchEvents(20)
+    await refreshTasks()
     apiError.value = null
   } catch (err) {
     apiError.value = err instanceof Error ? err.message : String(err)
@@ -254,6 +302,7 @@ async function send() {
           </template>
           <span class="stat warn" v-if="scheduler?.rateLimitHits">RL: {{ scheduler.rateLimitHits }}回</span>
           <span class="stat" v-if="scheduler?.activeHours">稼働: {{ scheduler.activeHours.start }}:00–{{ scheduler.activeHours.end }}:00</span>
+          <span class="stat" :class="successRateColor">成功率: {{ Math.round(successRate) }}%</span>
         </div>
         <div class="spacer" />
         <router-link to="/tasks" class="nav-link">タスク管理</router-link>
