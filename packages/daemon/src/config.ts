@@ -122,3 +122,50 @@ function parseActiveHours(value: string | undefined): ActiveHours | null {
   if (start < 0 || start > 23 || end < 0 || end > 23) return null
   return { start, end }
 }
+
+/**
+ * Validates required environment variables for LLM configuration.
+ * Throws an error with concise message listing missing variable names.
+ * 
+ * Error message format:
+ * - Single missing variable: "Missing required environment variable: VAR_NAME"
+ * - Multiple missing variables: "Missing required environment variables: VAR1, VAR2, VAR3"
+ */
+export function validateEnv(): void {
+  const missing: string[] = []
+
+  // Check if any LLM configuration is available
+  const hasLLMConfig = 
+    optionalEnv("LLM_API_KEY") !== null ||
+    optionalEnv("TESTER_LLM_API_KEY") !== null ||
+    optionalEnv("WORKER_LLM_API_KEY") !== null
+  
+  const hasLLMBaseURL = 
+    optionalEnv("LLM_BASE_URL") !== null ||
+    optionalEnv("TESTER_LLM_BASE_URL") !== null ||
+    optionalEnv("WORKER_LLM_BASE_URL") !== null
+  
+  const hasLLMModel = 
+    optionalEnv("LLM_MODEL") !== null ||
+    optionalEnv("TESTER_LLM_MODEL") !== null ||
+    optionalEnv("WORKER_LLM_MODEL") !== null
+
+  if (!hasLLMConfig) {
+    missing.push("LLM_API_KEY")
+  }
+  
+  if (!hasLLMBaseURL) {
+    missing.push("LLM_BASE_URL")
+  }
+  
+  if (!hasLLMModel) {
+    missing.push("LLM_MODEL")
+  }
+
+  if (missing.length > 0) {
+    const message = missing.length === 1
+      ? `Missing required environment variable: ${missing[0]}`
+      : `Missing required environment variables: ${missing.join(", ")}`
+    throw new Error(message)
+  }
+}
