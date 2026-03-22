@@ -59,6 +59,17 @@ const filteredTasks = computed(() => {
 function statusIcon(s: Task['status']) { return { pending: '⏳', running: '⚡', done: '✅', failed: '❌', suppressed: '🧊' }[s] }
 function statusLabel(s: Task['status']) { return { pending: '待機', running: '実行中', done: '完了', failed: '失敗', suppressed: '抑止' }[s] }
 
+// ステータスバッジ用のCSSクラスを返すcomputedプロパティ
+const statusClass = (s: Task['status']) => { 
+  return { 
+    pending: 'status-badge s-pending', 
+    running: 'status-badge s-running', 
+    done: 'status-badge s-done', 
+    failed: 'status-badge s-failed', 
+    suppressed: 'status-badge s-suppressed' 
+  }[s] 
+}
+
 function timeAgo(iso: string | null): string {
   if (!iso) return ''
   const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
@@ -112,7 +123,7 @@ async function submitTask() {
         <router-link :to="`/tasks/${task.id}`" class="task-link">
           <span class="ti">{{ statusIcon(task.status) }}</span>
           <div class="task-main">
-            <span class="task-title">{{ task.title }}</span>
+            <span class="task-title">{{ task.title }}<span :class="statusClass(task.status)">{{ task.status }}</span></span>
             <span class="task-meta">
               {{ statusLabel(task.status) }}
               <template v-if="task.assigned_to"> · {{ task.assigned_to }}</template>
@@ -307,4 +318,41 @@ header { margin-bottom: 1rem; }
 .mact button { background: #21262d; color: #8b949e; border: 1px solid #30363d; border-radius: 4px; padding: 0.3rem 0.6rem; font-family: inherit; font-size: 0.8rem; cursor: pointer; }
 .mact button.pri { background: #238636; color: #f0f6fc; border: none; }
 .mact button.pri:disabled { opacity: 0.4; }
+
+/* ステータスバッジ */
+.status-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+}
+
+.s-pending {
+  background-color: #6e7681;
+  color: #f0f6fc;
+}
+
+.s-running {
+  background-color: #58a6ff;
+  color: #f0f6fc;
+}
+
+.s-done {
+  background-color: #238636;
+  color: #f0f6fc;
+}
+
+.s-failed {
+  background-color: #f85149;
+  color: #f0f6fc;
+}
+
+.s-suppressed {
+  background-color: #6e7681;
+  color: #f0f6fc;
+  opacity: 0.75;
+}
 </style>
