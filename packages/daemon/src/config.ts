@@ -122,3 +122,44 @@ function parseActiveHours(value: string | undefined): ActiveHours | null {
   if (start < 0 || start > 23 || end < 0 || end > 23) return null
   return { start, end }
 }
+
+/**
+ * Validates required environment variables.
+ * Throws an error with a concise message if any required variable is missing.
+ */
+export function validateEnv(): void {
+  // Check required LLM configuration only if LLM backend is enabled
+  const llmBackend = process.env.LLM_BACKEND || "openai-compatible"
+  if (llmBackend !== "none" && llmBackend !== "") {
+    if (!process.env.LLM_API_KEY?.trim()) {
+      throw new Error("LLM_API_KEY is required")
+    }
+    
+    if (!process.env.LLM_BASE_URL?.trim()) {
+      throw new Error("LLM_BASE_URL is required")
+    }
+    
+    if (!process.env.LLM_MODEL?.trim()) {
+      throw new Error("LLM_MODEL is required")
+    }
+  }
+
+  // Check numeric environment variables
+  const numericVars = [
+    "API_PORT",
+    "WORKER_TIMEOUT_MS",
+    "TESTER_TIMEOUT_MS",
+    "PM_TIMEOUT_MS",
+    "BUILD_TIMEOUT_MS",
+    "TEST_TIMEOUT_MS",
+    "LINT_TIMEOUT_MS",
+    "LLM_REQUEST_TIMEOUT_MS"
+  ]
+
+  for (const varName of numericVars) {
+    const value = process.env[varName]
+    if (value !== undefined && value !== "" && isNaN(Number(value))) {
+      throw new Error(`${varName} must be a number`)
+    }
+  }
+}
