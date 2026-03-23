@@ -56,7 +56,6 @@ const filteredTasks = computed(() => {
   return list
 })
 
-function statusIcon(s: Task['status']) { return { pending: '⏳', running: '⚡', done: '✅', failed: '❌', suppressed: '🧊' }[s] }
 function statusLabel(s: Task['status']) { return { pending: '待機', running: '実行中', done: '完了', failed: '失敗', suppressed: '抑止' }[s] }
 
 function timeAgo(iso: string | null): string {
@@ -110,7 +109,7 @@ async function submitTask() {
     <div class="task-list" v-if="filteredTasks.length > 0">
       <div v-for="task in filteredTasks" :key="task.id" class="task-row" :class="`s-${task.status}`">
         <router-link :to="`/tasks/${task.id}`" class="task-link">
-          <span class="ti">{{ statusIcon(task.status) }}</span>
+          <span class="status-badge" :class="`badge-${task.status}`"></span>
           <div class="task-main">
             <span class="task-title">{{ task.title }}</span>
             <span class="task-meta">
@@ -229,16 +228,25 @@ header { margin-bottom: 1rem; }
 }
 .task-link:hover { background: #161b22; }
 
-.ti { font-size: 0.8rem; flex-shrink: 0; }
 .task-main { flex: 1; min-width: 0; }
 .task-title { display: block; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-meta { display: block; font-size: 0.65rem; color: #484f58; margin-top: 0.1rem; }
 .task-time { color: #484f58; font-size: 0.65rem; flex-shrink: 0; }
 
-.s-running { border-left: 3px solid #d29922; }
+.s-pending { border-left: 3px solid #8b949e; }
+.s-running { border-left: 3px solid #58a6ff; }
 .s-failed { border-left: 3px solid #f85149; }
-.s-done { border-left: 3px solid #238636; }
+.s-done { border-left: 3px solid #3fb950; }
 .s-suppressed { border-left: 3px solid #6e7681; opacity: 0.75; }
+
+.status-badge {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.badge-pending { background-color: #8b949e; }
+.badge-running { background-color: #58a6ff; }
+.badge-done { background-color: #3fb950; }
+.badge-failed { background-color: #f85149; }
+.badge-suppressed { background-color: #6e7681; }
 
 .error-banner {
   background: #3d1214; color: #f85149; border: 1px solid #f8514930;
