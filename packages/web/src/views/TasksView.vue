@@ -70,6 +70,43 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(hr / 24)}日前`
 }
 
+// 実行時間を計算する関数（computedプロパティとして使用）
+// 実行時間を計算するcomputedプロパティ
+const executionTimes = computed(() => {
+  const times: Record<string, string> = {}
+  for (const task of tasks.value) {
+    if (!task.started_at || !task.finished_at) {
+      times[task.id] = '-'
+      continue
+    }
+    
+    const started = new Date(task.started_at).getTime()
+    const finished = new Date(task.finished_at).getTime()
+    const durationMs = finished - started
+    
+    if (durationMs <= 0) {
+      times[task.id] = '-'
+      continue
+    }
+    
+    const totalSeconds = Math.floor(durationMs / 1000)
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    
+    if (minutes === 0) {
+      times[task.id] = `${seconds}秒`
+    } else {
+      times[task.id] = `${minutes}分${seconds}秒`
+    }
+  }
+  return times
+})
+
+// 実行時間を取得する関数（computedプロパティから取得）
+function formatExecutionTime(task: Task): string {
+  return executionTimes.value[task.id] || '-'
+}
+
 // --- Modal ---
 const showModal = ref(false)
 const taskForm = ref({ title: '', description: '', priority: 50 })
@@ -119,6 +156,7 @@ async function submitTask() {
               · p={{ task.priority }}
             </span>
           </div>
+          <span class="execution-time">{{ formatExecutionTime(task) }}</span>
           <span class="task-time">{{ timeAgo(task.finished_at || task.started_at || task.created_at) }}</span>
         </router-link>
       </div>
@@ -233,6 +271,7 @@ header { margin-bottom: 1rem; }
 .task-main { flex: 1; min-width: 0; }
 .task-title { display: block; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-meta { display: block; font-size: 0.65rem; color: #484f58; margin-top: 0.1rem; }
+.execution-time { color: #484f58; font-size: 0.65rem; flex-shrink: 0; text-align: right; min-width: 60px; }
 .task-time { color: #484f58; font-size: 0.65rem; flex-shrink: 0; }
 
 .s-running { border-left: 3px solid #d29922; }
