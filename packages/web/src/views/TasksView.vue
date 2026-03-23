@@ -70,6 +70,23 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(hr / 24)}日前`
 }
 
+function formatDuration(ms: number | null | undefined): string {
+  if (ms == null || ms < 0) return ''
+  if (ms < 1000) return '0s'
+  
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  
+  if (minutes === 0) {
+    return `${seconds}s`
+  } else if (seconds === 0) {
+    return `${minutes}m`
+  } else {
+    return `${minutes}m${seconds}s`
+  }
+}
+
 // --- Modal ---
 const showModal = ref(false)
 const taskForm = ref({ title: '', description: '', priority: 50 })
@@ -119,6 +136,7 @@ async function submitTask() {
               · p={{ task.priority }}
             </span>
           </div>
+          <span class="task-duration">{{ formatDuration(task.duration_ms) }}</span>
           <span class="task-time">{{ timeAgo(task.finished_at || task.started_at || task.created_at) }}</span>
         </router-link>
       </div>
@@ -233,12 +251,20 @@ header { margin-bottom: 1rem; }
 .task-main { flex: 1; min-width: 0; }
 .task-title { display: block; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-meta { display: block; font-size: 0.65rem; color: #484f58; margin-top: 0.1rem; }
+.task-duration { color: #8b949e; font-size: 0.65rem; flex-shrink: 0; min-width: 3.5rem; text-align: right; }
 .task-time { color: #484f58; font-size: 0.65rem; flex-shrink: 0; }
 
 .s-running { border-left: 3px solid #d29922; }
 .s-failed { border-left: 3px solid #f85149; }
 .s-done { border-left: 3px solid #238636; }
 .s-suppressed { border-left: 3px solid #6e7681; opacity: 0.75; }
+
+/* レスポンシブ対応: モバイル表示では実行時間を非表示 */
+@media (max-width: 768px) {
+  .task-duration {
+    display: none;
+  }
+}
 
 .error-banner {
   background: #3d1214; color: #f85149; border: 1px solid #f8514930;

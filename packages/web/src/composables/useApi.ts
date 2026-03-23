@@ -15,6 +15,7 @@ export type Task = {
   started_at: string | null
   finished_at: string | null
   result: string | null
+  duration_ms?: number | null
 }
 
 export type TaskLog = {

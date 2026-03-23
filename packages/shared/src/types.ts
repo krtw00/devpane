@@ -22,6 +22,7 @@ export type Task = {
   cost_usd: number
   tokens_used: number
   retry_count: number
+  duration_ms?: number | null
 }
 
 // Observable Facts — Worker完了後にdaemonが客観的に収集する事実
