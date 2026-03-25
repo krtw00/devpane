@@ -2,18 +2,23 @@ import type { Notifier } from "./notifier.js"
 import { NullNotifier } from "./notifier.js"
 import { SlackNotifier } from "./slack.js"
 import { DiscordNotifier } from "./discord.js"
+import { MattermostNotifier } from "./mattermost.js"
 
 let instance: Notifier | null = null
 
 /** Create and cache the notifier based on environment variables.
- *  Priority: SLACK_WEBHOOK_URL > DISCORD_WEBHOOK_URL > NullNotifier */
+ *  Priority: MATTERMOST_WEBHOOK_URL > SLACK_WEBHOOK_URL > DISCORD_WEBHOOK_URL > NullNotifier */
 export function getNotifier(): Notifier {
   if (instance) return instance
 
+  const mattermostUrl = process.env.MATTERMOST_WEBHOOK_URL
   const slackUrl = process.env.SLACK_WEBHOOK_URL
   const discordUrl = process.env.DISCORD_WEBHOOK_URL
 
-  if (slackUrl) {
+  if (mattermostUrl) {
+    console.log("[notifier] using Mattermost webhook")
+    instance = new MattermostNotifier(mattermostUrl)
+  } else if (slackUrl) {
     console.log("[notifier] using Slack webhook")
     instance = new SlackNotifier(slackUrl)
   } else if (discordUrl) {
