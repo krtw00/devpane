@@ -126,7 +126,7 @@ const diffDelPct = computed(() => {
       </section>
 
       <section v-if="facts" class="facts">
-        <h2>実行結果</h2>
+        <h2>Observable Facts</h2>
         <div class="facts-grid">
           <div>exit: <strong>{{ facts.exit_code }}</strong></div>
           <div>files: <strong>{{ facts.files_changed?.length ?? 0 }}</strong></div>
@@ -135,6 +135,7 @@ const diffDelPct = computed(() => {
           </div>
           <div v-if="facts.branch">branch: {{ facts.branch }}</div>
           <div v-if="facts.commit_hash">commit: {{ facts.commit_hash?.slice(0, 8) }}</div>
+          <div>Execution time: <strong>{{ facts.execution_time_ms !== undefined ? facts.execution_time_ms + ' ms' : 'N/A' }}</strong></div>
         </div>
         <div v-if="facts.diff_stats" class="diff-bar-container">
           <div class="diff-bar">
