@@ -8,6 +8,29 @@ const OPEN_PR_CACHE_TTL_MS = 5 * 60 * 1000
 let lastKnownOpenPrs: { value: number, updatedAt: number } | null = null
 let warnedMissingBaseRef = false
 
+/**
+ * Safely parse JSON string without throwing exceptions
+ * @param text JSON string to parse
+ * @param defaultValue Default value to return if parsing fails
+ * @param reviver Optional reviver function as in JSON.parse
+ * @returns Parsed value or defaultValue if parsing fails
+ */
+export function safeJsonParse<T = any>(
+  text: string | null | undefined,
+  defaultValue: T | null = null,
+  reviver?: (key: string, value: any) => any
+): T | null {
+  if (text == null || text === "") {
+    return defaultValue
+  }
+
+  try {
+    return JSON.parse(text, reviver)
+  } catch {
+    return defaultValue
+  }
+}
+
 function git(args: string[], options?: { cwd?: string; quietStderr?: boolean; timeout?: number }): string {
   return execFileSync("git", args, {
     cwd: options?.cwd ?? config.PROJECT_ROOT,
@@ -149,14 +172,14 @@ export function autoMergePr(taskId: string): boolean {
   }
 }
 
-function hasOpenPr(branch: string): boolean {
+export function hasOpenPr(branch: string): boolean {
   try {
     const result = execFileSync("gh", ["pr", "list", "--head", branch, "--state", "open", "--json", "number"], {
       cwd: config.PROJECT_ROOT,
       encoding: "utf-8",
       timeout: 15000,
     }).trim()
-    const prs = JSON.parse(result)
+    const prs = safeJsonParse<any[]>(result, [])
     return Array.isArray(prs) && prs.length > 0
   } catch {
     return false
@@ -236,7 +259,16 @@ export function countOpenPrs(): number | null {
       encoding: "utf-8",
       timeout: 15000,
     }).trim()
-    const prs = JSON.parse(result)
+    const prs = safeJsonParse<any[]>(result, null)
+    if (prs === null) {
+      // JSON parsing failed, use cache if available
+      console.warn('[worktree] countOpenPrs: JSON parsing failed')
+      if (lastKnownOpenPrs && Date.now() - lastKnownOpenPrs.updatedAt <= OPEN_PR_CACHE_TTL_MS) {
+        console.warn(`[worktree] using cached open PR count: ${lastKnownOpenPrs.value}`)
+        return lastKnownOpenPrs.value
+      }
+      return null
+    }
     const count = Array.isArray(prs) ? prs.length : 0
     lastKnownOpenPrs = { value: count, updatedAt: Date.now() }
     return count
