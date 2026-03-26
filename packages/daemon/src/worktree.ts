@@ -149,14 +149,20 @@ export function autoMergePr(taskId: string): boolean {
   }
 }
 
-function hasOpenPr(branch: string): boolean {
+export function hasOpenPr(branch: string): boolean {
   try {
     const result = execFileSync("gh", ["pr", "list", "--head", branch, "--state", "open", "--json", "number"], {
       cwd: config.PROJECT_ROOT,
       encoding: "utf-8",
       timeout: 15000,
     }).trim()
-    const prs = JSON.parse(result)
+    let prs
+    try {
+      prs = JSON.parse(result)
+    } catch (parseError) {
+      console.warn(`[worktree] JSON.parse failed in hasOpenPr: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
+      return false
+    }
     return Array.isArray(prs) && prs.length > 0
   } catch {
     return false
@@ -236,7 +242,18 @@ export function countOpenPrs(): number | null {
       encoding: "utf-8",
       timeout: 15000,
     }).trim()
-    const prs = JSON.parse(result)
+    let prs
+    try {
+      prs = JSON.parse(result)
+    } catch (parseError) {
+      console.warn(`[worktree] JSON.parse failed in countOpenPrs: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
+      // JSON.parse エラーの場合、キャッシュをチェックして適切な値を返す
+      if (lastKnownOpenPrs && Date.now() - lastKnownOpenPrs.updatedAt <= OPEN_PR_CACHE_TTL_MS) {
+        console.warn(`[worktree] using cached open PR count: ${lastKnownOpenPrs.value}`)
+        return lastKnownOpenPrs.value
+      }
+      return null
+    }
     const count = Array.isArray(prs) ? prs.length : 0
     lastKnownOpenPrs = { value: count, updatedAt: Date.now() }
     return count
