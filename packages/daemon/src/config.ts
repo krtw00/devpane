@@ -122,3 +122,56 @@ function parseActiveHours(value: string | undefined): ActiveHours | null {
   if (start < 0 || start > 23 || end < 0 || end > 23) return null
   return { start, end }
 }
+
+export function validateEnv(): void {
+  const errors: string[] = []
+
+  // Validate required string variables
+  if (!config.PROJECT_ROOT || config.PROJECT_ROOT.trim() === "") {
+    errors.push("PROJECT_ROOT must be a non-empty string")
+  }
+
+  if (!config.APP_NAME || config.APP_NAME.trim() === "") {
+    errors.push("APP_NAME must be a non-empty string")
+  }
+
+  // Validate numeric variables
+  if (isNaN(config.WORKER_TIMEOUT_MS) || config.WORKER_TIMEOUT_MS <= 0) {
+    errors.push("WORKER_TIMEOUT_MS must be a positive number")
+  }
+
+  if (isNaN(config.TESTER_TIMEOUT_MS) || config.TESTER_TIMEOUT_MS <= 0) {
+    errors.push("TESTER_TIMEOUT_MS must be a positive number")
+  }
+
+  if (isNaN(config.PM_TIMEOUT_MS) || config.PM_TIMEOUT_MS <= 0) {
+    errors.push("PM_TIMEOUT_MS must be a positive number")
+  }
+
+  if (isNaN(config.API_PORT) || config.API_PORT < 1 || config.API_PORT > 65535) {
+    errors.push("API_PORT must be a valid port number (1-65535)")
+  }
+
+  if (isNaN(config.WORKER_CONCURRENCY) || config.WORKER_CONCURRENCY < 1) {
+    errors.push("WORKER_CONCURRENCY must be at least 1")
+  }
+
+  if (isNaN(config.BACKUP_KEEP_COUNT) || config.BACKUP_KEEP_COUNT < 0) {
+    errors.push("BACKUP_KEEP_COUNT must be a non-negative number")
+  }
+
+  // Validate other important variables
+  if (config.DB_PATH.trim() === "") {
+    errors.push("DB_PATH must be a non-empty string")
+  }
+
+  if (config.BACKUP_DIR.trim() === "") {
+    errors.push("BACKUP_DIR must be a non-empty string")
+  }
+
+  if (errors.length > 0) {
+    // 仕様に従って、各エラーに変数名を含める
+    const errorMessages = errors.map(error => `Invalid environment variable: ${error}`)
+    throw new Error(errorMessages.join("; "))
+  }
+}

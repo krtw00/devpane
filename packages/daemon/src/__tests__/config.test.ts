@@ -8,6 +8,10 @@ async function loadConfig(): Promise<AnyConfig> {
   return mod.config
 }
 
+async function loadConfigModule(): Promise<{ config: AnyConfig; validateEnv: () => void }> {
+  return await vi.importActual<{ config: AnyConfig; validateEnv: () => void }>("../config.js")
+}
+
 describe("config env overrides", () => {
   beforeEach(() => {
     vi.resetModules()
@@ -235,6 +239,220 @@ describe("config env overrides", () => {
     vi.stubEnv("BACKUP_DIR", "/tmp/custom-backups")
     const config = await loadConfig()
     expect(config.BACKUP_DIR).toBe("/tmp/custom-backups")
+    vi.unstubAllEnvs()
+  })
+})
+
+describe("validateEnv", () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it("throws error with specific variable name when PROJECT_ROOT is empty", async () => {
+    vi.stubEnv("PROJECT_ROOT", "")
+    const { validateEnv } = await loadConfigModule()
+    expect(() => validateEnv()).toThrow("Invalid environment variable: PROJECT_ROOT must be a non-empty string")
+    vi.unstubAllEnvs()
+  })
+
+  it("throws error with specific variable name when APP_NAME is empty", async () => {
+    vi.stubEnv("APP_NAME", "")
+    const { validateEnv } = await loadConfigModule()
+    expect(() => validateEnv()).toThrow("Invalid environment variable: APP_NAME must be a non-empty string")
+    vi.unstubAllEnvs()
+  })
+
+  it("throws error with specific variable name when WORKER_TIMEOUT_MS is not a number", async () => {
+    vi.stubEnv("WORKER_TIMEOUT_MS", "not-a-number")
+    const { validateEnv } = await loadConfigModule()
+    expect(() => validateEnv()).toThrow("Invalid environment variable: WORKER_TIMEOUT_MS must be a positive number")
+    vi.unstubAllEnvs()
+  })
+
+  it("throws error with specific variable name when WORKER_TIMEOUT_MS is negative", async () => {
+    vi.stubEnv("WORKER_TIMEOUT_MS", "-100")
+    const { validateEnv } = await loadConfigModule()
+    expect(() => validateEnv()).toThrow("Invalid environment variable: WORKER_TIMEOUT_MS must be a positive number")
+    vi.unstubAllEnvs()
+  })
+
+  it("throws error with specific variable name when API_PORT is not a valid port number", async () => {
+    vi.stubEnv("API_PORT", "70000")
+    const { validateEnv } = await loadConfigModule()
+    expect(() => validateEnv()).toThrow("Invalid environment variable: API_PORT must be a valid port number (1-65535)")
+    vi.unstubAllEnvs()
+  })
+
+  it("does not throw when all environment variables are valid", async () => {
+    // Set valid values for required variables
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test-project")
+    vi.stubEnv("APP_NAME", "TestApp")
+    vi.stubEnv("WORKER_TIMEOUT_MS", "600000")
+    vi.stubEnv("API_PORT", "3001")
+    
+    const { validateEnv } = await loadConfigModule()
+    expect(() => validateEnv()).not.toThrow()
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for all validation errors", async () => {
+    vi.stubEnv("PROJECT_ROOT", "")
+    vi.stubEnv("APP_NAME", "")
+    vi.stubEnv("WORKER_TIMEOUT_MS", "invalid")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow()
+    
+    // エラーメッセージをキャプチャして検証
+    let errorMessage = ""
+    try {
+      validateEnv()
+    } catch (error) {
+      errorMessage = (error as Error).message
+    }
+    
+    // Check that the error message contains variable names
+    expect(errorMessage).toContain("PROJECT_ROOT")
+    expect(errorMessage).toContain("APP_NAME")
+    expect(errorMessage).toContain("WORKER_TIMEOUT_MS")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("formats error message with 'Invalid environment variable: ' prefix for single error", async () => {
+    vi.stubEnv("PROJECT_ROOT", "")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: PROJECT_ROOT must be a non-empty string")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("formats error messages with 'Invalid environment variable: ' prefix for multiple errors separated by semicolons", async () => {
+    vi.stubEnv("PROJECT_ROOT", "")
+    vi.stubEnv("APP_NAME", "")
+    vi.stubEnv("WORKER_TIMEOUT_MS", "invalid")
+    vi.stubEnv("API_PORT", "70000")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow()
+    
+    // エラーメッセージをキャプチャして検証
+    let errorMessage = ""
+    try {
+      validateEnv()
+    } catch (error) {
+      errorMessage = (error as Error).message
+    }
+    
+    // Check that all error messages have the correct prefix
+    expect(errorMessage).toMatch(/^Invalid environment variable: .*; Invalid environment variable: .*; Invalid environment variable: .*; Invalid environment variable: .*$/)
+    
+    // Check that each variable name appears in the error message
+    expect(errorMessage).toContain("PROJECT_ROOT")
+    expect(errorMessage).toContain("APP_NAME")
+    expect(errorMessage).toContain("WORKER_TIMEOUT_MS")
+    expect(errorMessage).toContain("API_PORT")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for DB_PATH validation", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("DB_PATH", "")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: DB_PATH must be a non-empty string")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for BACKUP_DIR validation", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("BACKUP_DIR", "")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: BACKUP_DIR must be a non-empty string")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for WORKER_CONCURRENCY validation", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("WORKER_CONCURRENCY", "0")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: WORKER_CONCURRENCY must be at least 1")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for BACKUP_KEEP_COUNT validation", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("BACKUP_KEEP_COUNT", "-1")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: BACKUP_KEEP_COUNT must be a non-negative number")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for TESTER_TIMEOUT_MS validation when not a number", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("TESTER_TIMEOUT_MS", "not-a-number")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: TESTER_TIMEOUT_MS must be a positive number")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for TESTER_TIMEOUT_MS validation when negative", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("TESTER_TIMEOUT_MS", "-100")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: TESTER_TIMEOUT_MS must be a positive number")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for PM_TIMEOUT_MS validation when not a number", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("PM_TIMEOUT_MS", "not-a-number")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: PM_TIMEOUT_MS must be a positive number")
+    
+    vi.unstubAllEnvs()
+  })
+
+  it("includes variable name in error message for PM_TIMEOUT_MS validation when negative", async () => {
+    vi.stubEnv("PROJECT_ROOT", "/tmp/test")
+    vi.stubEnv("APP_NAME", "Test")
+    vi.stubEnv("PM_TIMEOUT_MS", "-100")
+    
+    const { validateEnv } = await loadConfigModule()
+    
+    expect(() => validateEnv()).toThrow("Invalid environment variable: PM_TIMEOUT_MS must be a positive number")
+    
     vi.unstubAllEnvs()
   })
 })
