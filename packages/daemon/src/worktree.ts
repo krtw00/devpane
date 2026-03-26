@@ -158,7 +158,8 @@ function hasOpenPr(branch: string): boolean {
     }).trim()
     const prs = JSON.parse(result)
     return Array.isArray(prs) && prs.length > 0
-  } catch {
+  } catch (err) {
+    console.warn(`[worktree] Failed to parse JSON output for hasOpenPr(${branch}):`, err instanceof Error ? err.message : err)
     return false
   }
 }
@@ -241,7 +242,7 @@ export function countOpenPrs(): number | null {
     lastKnownOpenPrs = { value: count, updatedAt: Date.now() }
     return count
   } catch (err) {
-    console.warn('[worktree] countOpenPrs failed:', err)
+    console.warn('[worktree] Failed to parse JSON output for countOpenPrs:', err instanceof Error ? err.message : err)
     if (lastKnownOpenPrs && Date.now() - lastKnownOpenPrs.updatedAt <= OPEN_PR_CACHE_TTL_MS) {
       console.warn(`[worktree] using cached open PR count: ${lastKnownOpenPrs.value}`)
       return lastKnownOpenPrs.value
@@ -281,4 +282,41 @@ export function getWorktreeDiff(taskId: string): { filesChanged: string[]; addit
 
 export function resetBaseRefWarningForTests(): void {
   warnedMissingBaseRef = false
+}
+
+/**
+ * Execute a command in a worktree and parse its JSON output
+ * @param taskId The task ID
+ * @param command The command to execute
+ * @param args Command arguments
+ * @returns Parsed JSON result or error object
+ */
+export function executeInWorktree(
+  taskId: string,
+  command: string,
+  args: string[]
+): { success: true; data: unknown } | { success: false; error: string } {
+  const path = join(WORKTREE_DIR, `task-${taskId}`)
+  
+  try {
+    const stdout = execFileSync(command, args, {
+      cwd: path,
+      encoding: "utf-8",
+      timeout: 30000,
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim()
+    
+    try {
+      const data = JSON.parse(stdout)
+      return { success: true, data }
+    } catch (parseError) {
+      console.warn(`[worktree] Failed to parse JSON output from ${command} in worktree ${taskId}:`, 
+        parseError instanceof Error ? parseError.message : String(parseError))
+      return { success: false, error: 'Failed to parse JSON output' }
+    }
+  } catch (execError) {
+    console.warn(`[worktree] Failed to execute ${command} in worktree ${taskId}:`,
+      execError instanceof Error ? execError.message : String(execError))
+    return { success: false, error: 'Failed to execute command' }
+  }
 }
