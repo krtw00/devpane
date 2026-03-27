@@ -149,7 +149,7 @@ export function autoMergePr(taskId: string): boolean {
   }
 }
 
-function hasOpenPr(branch: string): boolean {
+export function hasOpenPr(branch: string): boolean {
   try {
     const result = execFileSync("gh", ["pr", "list", "--head", branch, "--state", "open", "--json", "number"], {
       cwd: config.PROJECT_ROOT,
